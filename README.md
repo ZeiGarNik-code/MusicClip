@@ -22,7 +22,7 @@ MusicClip Visualizer phát nhạc (bài có sẵn trong app + nhạc trên máy 
 
 ## 📦 Cài đặt
 
-1. Tải `dist/MusicClip-Visualizer-v1.0.0.apk` từ repo.
+1. Tải `dist/MusicClip-Visualizer-v1.0.1.apk` từ repo.
 2. Cài đặt lên điện thoại Android 7.0+ (API 24+). Bật **"Cho phép cài từ nguồn không xác định"** nếu được hỏi.
 3. Mở app → chọn nhạc + nguồn hình → **BẮT ĐẦU**.
 
@@ -70,7 +70,7 @@ Yêu cầu: Android Studio / JDK 11+, SDK 33. *(Cấu hình Gradle chuẩn, khô
 
 ```bash
 tools/fetch_toolchain.sh       # 1 lần: tải toolchain vào .toolchain/ (JDK, android.jar, aapt2, d8, apksigner)
-tools/build_apk.sh             # build -> dist/MusicClip-Visualizer-v1.0.0.apk
+tools/build_apk.sh             # build -> dist/MusicClip-Visualizer-v1.0.1.apk
 ```
 
 Pipeline: `aapt2 compile/link → javac → d8 → zipalign → apksigner`. Xem chi tiết từng công cụ trong [`tools/README-toolchain.md`](tools/README-toolchain.md).
@@ -103,7 +103,7 @@ app/src/main/
 └── assets/music/*.wav               # 3 bài có sẵn (tạo bởi tools/make_music.py)
 
 tools/                               # scripts build + sinh tài nguyên
-dist/MusicClip-Visualizer-v1.0.0.apk # APK đã ký, cài được ngay
+dist/MusicClip-Visualizer-v1.0.1.apk # APK đã ký, cài được ngay
 ```
 
 **Quy trình xuất video:** đọc PCM (WAV asset hoặc giải mã bài trên máy bằng MediaCodec) → mã hóa AAC; đồng thời RenderEngine vẽ từng khung vào Bitmap → nạp texture GL → encoder H.264 (input surface, PTS qua `eglPresentationTimeANDROID`) → gộp bằng `MediaMuxer`.

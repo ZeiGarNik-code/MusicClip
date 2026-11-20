@@ -97,7 +97,11 @@ public class VisualizerView extends SurfaceView implements SurfaceHolder.Callbac
                     }
                 }
             } catch (IllegalArgumentException | IllegalStateException e) {
+                // surface went away mid-frame — wait for the next surfaceCreated
                 surfaceReady = false;
+            } catch (Throwable t) {
+                // never let a single bad frame kill the whole process
+                android.util.Log.w("VisualizerView", "render frame failed", t);
             } finally {
                 if (c != null) {
                     try {
