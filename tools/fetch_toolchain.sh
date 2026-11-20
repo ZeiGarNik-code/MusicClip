@@ -25,9 +25,9 @@ die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 # plain curl works too for anonymous use (rate limit ~60 req/h is plenty here).
 fetch_gh() { # $1 = "owner/repo/contents/path"
   if command -v gh >/dev/null 2>&1; then
-    gh api -H 'Accept: application/vnd.github.raw' "$1"
+    gh api -H 'Accept: application/vnd.github.raw' "repos/$1"
   else
-    curl -fsSL -H 'Accept: application/vnd.github.raw' "https://api.github.com/$1"
+    curl -fsSL -H 'Accept: application/vnd.github.raw' "https://api.github.com/repos/$1"
   fi
 }
 

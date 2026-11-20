@@ -14,12 +14,21 @@ import java.util.Random;
  * https://commons.wikimedia.org/w/api.php
  */
 public class WikimediaSource extends HttpSource {
-    private static final String[] QUERIES = {
+    private static final String[] DEFAULT_QUERIES = {
             "night sky", "city neon", "ocean wave", "mountain fog", "forest light",
             "abstract color", "sunset horizon", "flower macro", "architecture modern",
             "galaxy nebula", "lake reflection", "desert dune", "rain street", "aurora",
     };
     private final Random rnd = new Random();
+    private final String[] queries;
+
+    public WikimediaSource() {
+        this(DEFAULT_QUERIES);
+    }
+
+    public WikimediaSource(String[] queries) {
+        this.queries = queries != null && queries.length > 0 ? queries : DEFAULT_QUERIES;
+    }
 
     @Override
     public String siteName() {
@@ -28,7 +37,7 @@ public class WikimediaSource extends HttpSource {
 
     @Override
     protected String resolveUrl(int maxW, int maxH) throws Exception {
-        String q = QUERIES[rnd.nextInt(QUERIES.length)];
+        String q = queries[rnd.nextInt(queries.length)];
         String api = "https://commons.wikimedia.org/w/api.php?action=query&format=json"
                 + "&formatversion=2&generator=search"
                 + "&gsrsearch=" + URLEncoder.encode("filetype:bitmap " + q, "UTF-8")

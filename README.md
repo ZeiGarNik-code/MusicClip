@@ -2,7 +2,7 @@
 
 **App Android (APK) tạo visual theo nhạc — mã nguồn mở, nhạc có sẵn, hình ảnh lấy từ các trang miễn phí.**
 
-MusicClip Visualizer phát nhạc (bài có sẵn trong app + nhạc trên máy của bạn) và vẽ **hiệu ứng trực tiếp theo tần số nhạc** (FFT) làm hình nền cho điện thoại. Bạn có thể **chụp ảnh PNG** hoặc **ghi video MP4** (tối đa 60 giây) để chia sẻ.
+MusicClip Visualizer phát nhạc (bài có sẵn trong app + nhạc trên máy của bạn) và vẽ **hiệu ứng trực tiếp theo tần số nhạc** (FFT) làm hình nền cho điện thoại. Bạn có thể **chụp ảnh PNG** hoặc **ghi video MP4 full theo thời lượng bài hát** (tối đa 180 phút, dọc 1080×1920@30fps **chuẩn TikTok**) để chia sẻ.
 
 ---
 
@@ -12,17 +12,17 @@ MusicClip Visualizer phát nhạc (bài có sẵn trong app + nhạc trên máy 
 |---|---|
 | 🎶 **Nhạc có sẵn** | 3 bài hát tích hợp (`Neon Skyline`, `Pulse Drive`, `Quiet Orbit`) — tổng hợp 100% từ code, bản quyền sạch (CC0) |
 | 🎤 **Nhạc trên máy** | Tự động liệt kê bài hát trong thư viện MediaStore của bạn |
-| 📊 **5 hiệu ứng** | Thanh phổ · Vòng tròn · Sóng · Hạt sáng · Xung nhịp — nhận diện cả **nhịp (beat)** |
-| 🖼️ **Nguồn hình miễn phí** | Picsum (Unsplash) · Wikimedia Commons · Openverse · NASA · Ảnh của máy · URL tùy chọn |
+| 📊 **6 hiệu ứng** | Thanh phổ · Vòng tròn · Sóng · Hạt sáng · Xung nhịp · **Ma mị** (sương, linh hồn bay, trăng ma) — nhận diện cả **nhịp (beat)** |
+| 🖼️ **Nguồn hình miễn phí** | Picsum (Unsplash) · Wikimedia Commons · Openverse · NASA · Ảnh của máy · URL tùy chọn · **Cảnh ma mị** |
 | 📷 **Chụp ảnh** | Lưu PNG vào `Pictures/MusicClip` |
-| 🎬 **Ghi video** | Export MP4 720×1280@30fps (H.264 + AAC) vào `Movies/MusicClip` |
+| 🎬 **Ghi video** | Export MP4 **full theo bài hát** (tối đa 180 phút), **1080×1920@30fps dọc 9:16 chuẩn TikTok** (H.264 + AAC ~10 Mbps) vào `Movies/MusicClip` |
 | 🔒 **Zero tracking, zero ads, zero third-party SDK** | Chỉ dùng framework Android |
 
 ---
 
 ## 📦 Cài đặt
 
-1. Tải `dist/MusicClip-Visualizer-v1.0.0.apk` từ repo.
+1. Tải `dist/MusicClip-Visualizer-v1.1.1.apk` từ repo.
 2. Cài đặt lên điện thoại Android 7.0+ (API 24+). Bật **"Cho phép cài từ nguồn không xác định"** nếu được hỏi.
 3. Mở app → chọn nhạc + nguồn hình → **BẮT ĐẦU**.
 
@@ -49,6 +49,7 @@ MusicClip Visualizer phát nhạc (bài có sẵn trong app + nhạc trên máy 
 | [NASA Image Library](https://images.nasa.gov) | Public domain | Không gian, Trái Đất, sao hỏa… |
 | Ảnh của tôi | — | Chọn từ bộ sưu tập (không cần cấp quyền) |
 | URL tùy chọn | — | Dán link ảnh trực tiếp bất kỳ trang nào |
+| **Cảnh ma mị** | Wikimedia Commons | Sương, đêm, mây bão, trăng — tạo vibe ma mị |
 
 App tự động đổi hình nền mỗi 20 giây; bấm **Hình nền** để đổi ngay. Nếu nguồn lỗi, app tự chuyển về Picsum.
 
@@ -70,7 +71,7 @@ Yêu cầu: Android Studio / JDK 11+, SDK 33. *(Cấu hình Gradle chuẩn, khô
 
 ```bash
 tools/fetch_toolchain.sh       # 1 lần: tải toolchain vào .toolchain/ (JDK, android.jar, aapt2, d8, apksigner)
-tools/build_apk.sh             # build -> dist/MusicClip-Visualizer-v1.0.0.apk
+tools/build_apk.sh             # build -> dist/MusicClip-Visualizer-v1.1.1.apk
 ```
 
 Pipeline: `aapt2 compile/link → javac → d8 → zipalign → apksigner`. Xem chi tiết từng công cụ trong [`tools/README-toolchain.md`](tools/README-toolchain.md).
@@ -94,16 +95,16 @@ app/src/main/
 │   ├── VisualizerActivity.java      # màn hình visual, chụp ảnh, ghi video
 │   ├── Track.java / BuiltInTracks.java
 │   ├── audio/AudioEngine.java       # MediaPlayer + Visualizer FFT (32 band, beat detect)
-│   ├── render/RenderEngine.java     # 5 hiệu ứng vẽ bằng Canvas
+│   ├── render/RenderEngine.java     # 6 hiệu ứng vẽ bằng Canvas
 │   ├── render/VisualizerView.java   # SurfaceView + render thread
-│   ├── source/…                     # Picsum, Wikimedia, Openverse, NASA, Gallery, URL
+│   ├── source/…                     # Picsum, Wikimedia, Openverse, NASA, Gallery, URL, Cảnh ma mị
 │   ├── export/VideoExporter.java    # PCM→AAC + Canvas→GL→H.264 + MediaMuxer
 │   └── util/ImageStore.java         # lưu PNG vào MediaStore
 ├── res/…                            # layout, strings (tiếng Việt), drawable, icon
 └── assets/music/*.wav               # 3 bài có sẵn (tạo bởi tools/make_music.py)
 
 tools/                               # scripts build + sinh tài nguyên
-dist/MusicClip-Visualizer-v1.0.0.apk # APK đã ký, cài được ngay
+dist/MusicClip-Visualizer-v1.1.1.apk # APK đã ký, cài được ngay
 ```
 
 **Quy trình xuất video:** đọc PCM (WAV asset hoặc giải mã bài trên máy bằng MediaCodec) → mã hóa AAC; đồng thời RenderEngine vẽ từng khung vào Bitmap → nạp texture GL → encoder H.264 (input surface, PTS qua `eglPresentationTimeANDROID`) → gộp bằng `MediaMuxer`.
@@ -130,4 +131,4 @@ dist/MusicClip-Visualizer-v1.0.0.apk # APK đã ký, cài được ngay
 
 ## English summary
 
-**MusicClip Visualizer** is an open-source Android app (pure Java, zero dependencies) that turns music into live visuals: 3 built-in royalty-free tracks + your device library, 5 beat-reactive effects driven by real FFT analysis, free image backgrounds from Picsum / Wikimedia Commons / Openverse / NASA (no API key), PNG screenshots and 60-second MP4 export. Build with Android Studio (`./gradlew assembleDebug`) or with the fully offline script pipeline (`tools/build_apk.sh`) that needs no Gradle and no Android SDK.
+**MusicClip Visualizer** is an open-source Android app (pure Java, zero dependencies) that turns music into live visuals: 3 built-in royalty-free tracks + your device library, 6 beat-reactive effects (including a foggy "Ma mị" phantom mode) driven by real FFT analysis, free image backgrounds from Picsum / Wikimedia Commons / Openverse / NASA (no API key), PNG screenshots and full-song MP4 export (up to 180 minutes, TikTok-ready vertical 1080×1920@30fps). Build with Android Studio (`./gradlew assembleDebug`) or with the fully offline script pipeline (`tools/build_apk.sh`) that needs no Gradle and no Android SDK.

@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <SurfaceView
+    <com.musicclip.visualizer.render.VisualizerView
         android:id="@+id/surface"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

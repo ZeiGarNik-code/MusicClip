@@ -22,6 +22,9 @@ public final class SourceManager {
             case 5:
                 src = new CustomUrlSource();
                 break;
+            case 6:
+                src = new EerieSource();
+                break;
             case 0:
             default:
                 src = new PicsumSource();

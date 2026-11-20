@@ -363,8 +363,9 @@ public class VisualizerActivity extends Activity {
     private void doExport() {
         exporting = true;
         showExportDialog();
-        int w = 720;
-        int h = 1280;
+        // TikTok standard: vertical 9:16, 1080x1920 @ 30 fps (H.264 + AAC)
+        int w = 1080;
+        int h = 1920;
         activeExporter = new VideoExporter(getApplicationContext(), track, currentBg,
                 view.getEffectIndex(), w, h, new VideoExporter.Listener() {
                     @Override

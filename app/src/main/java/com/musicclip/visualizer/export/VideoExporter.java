@@ -3,7 +3,6 @@ package com.musicclip.visualizer.export;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
-import android.content.res.AssetFileDescriptor;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.media.MediaCodec;
@@ -36,6 +35,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
@@ -47,16 +47,20 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Offline MP4 exporter:
- * audio path  PCM (asset WAV or MediaCodec decode) -> AAC encoder
- * video path  RenderEngine(Canvas) -> GL quad -> H.264 encoder (input surface)
- * both tracks -> MediaMuxer (Movies/MusicClip).
+ * Offline MP4 exporter — full song duration (safety cap 10 minutes).
+ *
+ * audio:  asset WAV (memory) or MediaCodec decode -> temp PCM file (streamed)
+ *          -> AAC encoder (fed chunk by chunk, never buffers the whole song)
+ * video:  RenderEngine(Canvas) -> GL quad -> H.264 encoder (input surface)
+ * mux:    MediaMuxer started as soon as BOTH encoder formats are known
+ *          (small hold-over buffers only), then everything streams straight in.
  */
 public class VideoExporter {
     private static final String TAG = "VideoExporter";
     private static final int FPS = 30;
     private static final long FRAME_US = 1_000_000L / FPS;
-    private static final long MAX_US = 60_000_000L;
+    /** Hard safety cap: export at most the first 180 minutes of a track. */
+    private static final long MAX_AUDIO_US = 180L * 60 * 1_000_000L;
     private static final int WIN = 1024;
 
     public interface Listener {
@@ -115,15 +119,16 @@ public class VideoExporter {
 
     private void runInternal() {
         File out = new File(appCtx.getCacheDir(), "mc_export_" + System.currentTimeMillis() + ".mp4");
+        PcmSource pcm = null;
         try {
-            publish(0.02f, "Đọc dữ liệu âm thanh…");
-            Pcm pcm = loadPcm();
+            publish(0.01f, "Đọc dữ liệu âm thanh…");
+            pcm = loadPcm();
             checkCancel();
-            long totalUs = pcm.frames() * 1_000_000L / pcm.sampleRate;
-            if (totalUs > MAX_US) totalUs = MAX_US;
+            long totalUs = pcm.totalFrames() * 1_000_000L / pcm.sampleRate();
+            if (totalUs <= 0) throw new Exception("bài hát rỗng");
             exportTo(out, pcm, totalUs);
             checkCancel();
-            publish(0.96f, "Lưu vào thư viện…");
+            publish(0.97f, "Lưu vào thư viện…");
             String location = publishToGallery(out);
             publish(1f, "Xong");
             listener.onDone(location);
@@ -136,33 +141,143 @@ public class VideoExporter {
                 String msg = t.getMessage() != null ? t.getMessage() : t.toString();
                 listener.onError(msg);
             }
+        } finally {
+            if (pcm != null) {
+                try {
+                    pcm.close();
+                } catch (Throwable ignored) {
+                }
+            }
         }
     }
 
-    // ------------------------------------------------------------------- PCM
+    // ------------------------------------------------------------ PCM source
 
-    static final class Pcm {
-        final short[] data;
-        final int sampleRate;
-        final int channels;
+    /** Random-access PCM16 little-endian audio. */
+    interface PcmSource {
+        int sampleRate();
 
-        Pcm(short[] data, int sampleRate, int channels) {
+        int channels();
+
+        long totalFrames();
+
+        /** Reads up to maxFrames sample-groups starting at startFrame; returns count (0 = EOF). */
+        int read(short[] dst, long startFrame, int maxFrames);
+
+        void close();
+    }
+
+    static final class MemoryPcm implements PcmSource {
+        private final short[] data;
+        private final int sr;
+        private final int ch;
+
+        MemoryPcm(short[] data, int sr, int ch) {
             this.data = data;
-            this.sampleRate = sampleRate;
-            this.channels = channels;
+            this.sr = sr;
+            this.ch = ch;
         }
 
-        long frames() {
-            return data.length / channels;
+        @Override
+        public int sampleRate() {
+            return sr;
+        }
+
+        @Override
+        public int channels() {
+            return ch;
+        }
+
+        @Override
+        public long totalFrames() {
+            return data.length / ch;
+        }
+
+        @Override
+        public int read(short[] dst, long startFrame, int maxFrames) {
+            long startSample = startFrame * ch;
+            if (startSample >= data.length) return 0;
+            int count = (int) Math.min(maxFrames * (long) ch, data.length - startSample);
+            count -= count % ch;
+            System.arraycopy(data, (int) startSample, dst, 0, count);
+            return count / ch;
+        }
+
+        @Override
+        public void close() {}
+    }
+
+    static final class FilePcm implements PcmSource {
+        private final File file;
+        private final long byteLen;
+        private final int sr;
+        private final int ch;
+        private final boolean deleteOnClose;
+        private RandomAccessFile raf;
+
+        FilePcm(File file, long byteLen, int sr, int ch, boolean deleteOnClose) throws Exception {
+            this.file = file;
+            this.byteLen = byteLen;
+            this.sr = sr;
+            this.ch = ch;
+            this.deleteOnClose = deleteOnClose;
+            this.raf = new RandomAccessFile(file, "r");
+        }
+
+        @Override
+        public int sampleRate() {
+            return sr;
+        }
+
+        @Override
+        public int channels() {
+            return ch;
+        }
+
+        @Override
+        public long totalFrames() {
+            return byteLen / (2L * ch);
+        }
+
+        @Override
+        public synchronized int read(short[] dst, long startFrame, int maxFrames) {
+            try {
+                long byteOff = startFrame * ch * 2L;
+                if (byteOff >= byteLen) return 0;
+                int want = (int) Math.min(maxFrames, (byteLen - byteOff) / (2L * ch));
+                if (want <= 0) return 0;
+                byte[] tmp = new byte[want * ch * 2];
+                raf.seek(byteOff);
+                raf.readFully(tmp);
+                for (int i = 0; i < want * ch; i++) {
+                    dst[i] = (short) ((tmp[2 * i] & 0xff) | (tmp[2 * i + 1] << 8));
+                }
+                return want;
+            } catch (Exception e) {
+                Log.w(TAG, "pcm read failed", e);
+                return 0;
+            }
+        }
+
+        @Override
+        public synchronized void close() {
+            try {
+                if (raf != null) raf.close();
+            } catch (Throwable ignored) {
+            }
+            raf = null;
+            if (deleteOnClose) file.delete();
         }
     }
 
-    private Pcm loadPcm() throws Exception {
+    // ---------------------------------------------------------------- loading
+
+    private PcmSource loadPcm() throws Exception {
         if (track.builtin) {
             byte[] raw = readAsset(track.assetPath);
             return parseWav(raw);
         }
-        return decodeDevice();
+        return decodeDeviceToTempFile();
     }
 
     private byte[] readAsset(String path) throws Exception {
@@ -187,7 +302,7 @@ public class VideoExporter {
                 | ((b[off + 2] & 0xff) << 16) | ((b[off + 3] & 0xff) << 24);
     }
 
-    private static Pcm parseWav(byte[] raw) throws Exception {
+    private static PcmSource parseWav(byte[] raw) throws Exception {
         if (raw.length < 44 || raw[0] != 'R' || raw[1] != 'I' || raw[2] != 'F' || raw[3] != 'F') {
             throw new Exception("không phải file WAV");
         }
@@ -212,7 +327,7 @@ public class VideoExporter {
         }
         if (pcmBytes == null) throw new Exception("WAV thiếu data");
         if (audioFormat != 1 || bits != 16) {
-            throw new Exception("chỉ hỗ trợ WAV PCM 16-bit (got fmt=" + audioFormat + " bits=" + bits + ")");
+            throw new Exception("chỉ hỗ trợ WAV PCM 16-bit");
         }
         if (channels < 1 || channels > 2 || sampleRate < 8000) {
             throw new Exception("WAV không hợp lệ");
@@ -221,11 +336,14 @@ public class VideoExporter {
         for (int i = 0; i < shorts.length; i++) {
             shorts[i] = (short) le16(pcmBytes, i * 2);
         }
-        return new Pcm(shorts, sampleRate, channels);
+        return new MemoryPcm(shorts, sampleRate, channels);
     }
 
-    private Pcm decodeDevice() throws Exception {
+    /** Streams the decoded device track into a temp PCM file (RAM-friendly, full length). */
+    private PcmSource decodeDeviceToTempFile() throws Exception {
         MediaExtractor ex = new MediaExtractor();
+        FileOutputStream fos = null;
+        File tmp = new File(appCtx.getCacheDir(), "mc_pcm_" + System.currentTimeMillis() + ".pcm");
         try {
             ex.setDataSource(appCtx, track.uri, null);
             int sel = -1;
@@ -248,60 +366,63 @@ public class VideoExporter {
 
             int sampleRate = 44100;
             int channels = 2;
-            ByteArrayOutputStream pcmOut = new ByteArrayOutputStream();
+            boolean formatKnown = false;
+            long maxBytes = -1;
+            long written = 0;
+            fos = new FileOutputStream(tmp);
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
             boolean done = false;
-            long maxSamples60s = -1; // in sample-groups, set after format known
-            long samplesWritten = 0;
             int spin = 0;
 
             while (!done) {
                 checkCancel();
-                if (spin++ > 200000) throw new Exception("decoder timeout");
-                if (!done) {
-                    int inIdx = dec.dequeueInputBuffer(10000);
-                    if (inIdx >= 0) {
-                        ByteBuffer ib = dec.getInputBuffer(inIdx);
-                        int sampleSize = ex.readSampleData(ib, 0);
-                        long pts = ex.getSampleTime();
-                        int flags = 0;
-                        if (sampleSize < 0) {
-                            flags = MediaCodec.BUFFER_FLAG_END_OF_STREAM;
-                            dec.queueInputBuffer(inIdx, 0, 0, pts, flags);
-                        } else {
-                            dec.queueInputBuffer(inIdx, 0, sampleSize, pts, 0);
-                            ex.advance();
-                        }
+                if (spin++ > 400000) throw new Exception("decoder timeout");
+
+                int inIdx = dec.dequeueInputBuffer(10000);
+                if (inIdx >= 0) {
+                    ByteBuffer ib = dec.getInputBuffer(inIdx);
+                    int sampleSize = ex.readSampleData(ib, 0);
+                    long pts = ex.getSampleTime();
+                    if (sampleSize < 0) {
+                        dec.queueInputBuffer(inIdx, 0, 0, pts, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                    } else {
+                        dec.queueInputBuffer(inIdx, 0, sampleSize, pts, 0);
+                        ex.advance();
                     }
                 }
+
                 int outIdx = dec.dequeueOutputBuffer(info, 10000);
                 if (outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     MediaFormat f = dec.getOutputFormat();
                     sampleRate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE);
                     channels = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
-                    maxSamples60s = 60L * sampleRate;
+                    formatKnown = true;
+                    long maxFrames = MAX_AUDIO_US * sampleRate / 1_000_000L;
+                    maxBytes = maxFrames * channels * 2L;
                 } else if (outIdx >= 0) {
                     if (info.size > 0) {
                         ByteBuffer ob = dec.getOutputBuffer(outIdx);
                         ob.position(info.offset);
                         ob.limit(info.offset + info.size);
-                        byte[] chunk = new byte[info.size];
-                        ob.get(chunk);
-                        if (maxSamples60s < 0) maxSamples60s = 60L * sampleRate;
-                        long canWrite = maxSamples60s - samplesWritten;
-                        int bytesPerSample = 2 * channels;
-                        long maxBytes = canWrite * bytesPerSample;
-                        if (maxBytes <= 0) {
-                            dec.releaseOutputBuffer(outIdx, false);
-                            done = true;
-                        } else {
-                            int toWrite = (int) Math.min(chunk.length, maxBytes);
-                            toWrite -= toWrite % bytesPerSample;
-                            pcmOut.write(chunk, 0, toWrite);
-                            samplesWritten += toWrite / bytesPerSample;
-                            dec.releaseOutputBuffer(outIdx, false);
-                            if (samplesWritten >= maxSamples60s) done = true;
+                        if (!formatKnown) {
+                            // format normally arrives before the first buffer
+                            formatKnown = true;
+                            long maxFrames = MAX_AUDIO_US * sampleRate / 1_000_000L;
+                            maxBytes = maxFrames * channels * 2L;
                         }
+                        int toWrite = info.size;
+                        if (maxBytes >= 0 && written + toWrite > maxBytes) {
+                            toWrite = (int) (maxBytes - written);
+                            toWrite -= toWrite % (channels * 2);
+                        }
+                        if (toWrite > 0) {
+                            byte[] chunk = new byte[toWrite];
+                            ob.get(chunk);
+                            fos.write(chunk);
+                            written += toWrite;
+                        }
+                        dec.releaseOutputBuffer(outIdx, false);
+                        if (maxBytes >= 0 && written >= maxBytes) done = true;
                     } else {
                         dec.releaseOutputBuffer(outIdx, false);
                     }
@@ -313,14 +434,20 @@ public class VideoExporter {
             } catch (Throwable ignored) {
             }
             dec.release();
+            fos.flush();
+            fos.close();
+            fos = null;
 
-            byte[] bytes = pcmOut.toByteArray();
-            short[] shorts = new short[bytes.length / 2];
-            for (int i = 0; i < shorts.length; i++) {
-                shorts[i] = (short) le16(bytes, i * 2);
+            if (written < channels * 2L) throw new Exception("không giải mã được âm thanh");
+            return new FilePcm(tmp, written, sampleRate, channels, true);
+        } catch (Throwable t) {
+            try {
+                if (fos != null) fos.close();
+            } catch (Throwable ignored) {
             }
-            if (shorts.length == 0) throw new Exception("không giải mã được âm thanh");
-            return new Pcm(shorts, sampleRate, channels);
+            tmp.delete();
+            if (t instanceof Exception) throw (Exception) t;
+            throw new Exception(String.valueOf(t));
         } finally {
             try {
                 ex.release();
@@ -331,84 +458,83 @@ public class VideoExporter {
 
     // --------------------------------------------------------------- export
 
-    private void exportTo(File outFile, Pcm pcm, long totalUs) throws Exception {
-        int frames = (int) ((totalUs + FRAME_US - 1) / FRAME_US);
-        if (frames < 1) frames = 1;
+    private void exportTo(File outFile, final PcmSource pcm, long totalUs) throws Exception {
+        final int frames = (int) Math.max(1, (totalUs + FRAME_US - 1) / FRAME_US);
 
         MediaFormat vFmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height);
         vFmt.setInteger(MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-        vFmt.setInteger(MediaFormat.KEY_BIT_RATE, 6_000_000);
+        // TikTok-ready 1080x1920@30: ~10 Mbps is the recommended upload bitrate
+        vFmt.setInteger(MediaFormat.KEY_BIT_RATE, 10_000_000);
         vFmt.setInteger(MediaFormat.KEY_FRAME_RATE, FPS);
         vFmt.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1);
         final MediaCodec videoCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
         videoCodec.configure(vFmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
-        Surface codecSurface = videoCodec.createInputSurface();
+        final Surface codecSurface = videoCodec.createInputSurface();
         videoCodec.start();
 
         MediaFormat aFmt = MediaFormat.createAudioFormat(
-                MediaFormat.MIMETYPE_AUDIO_AAC, pcm.sampleRate, pcm.channels);
+                MediaFormat.MIMETYPE_AUDIO_AAC, pcm.sampleRate(), pcm.channels());
         aFmt.setInteger(MediaFormat.KEY_AAC_PROFILE,
                 MediaCodecInfo.CodecProfileLevel.AACObjectLC);
-        aFmt.setInteger(MediaFormat.KEY_BIT_RATE, pcm.channels >= 2 ? 160000 : 112000);
+        aFmt.setInteger(MediaFormat.KEY_BIT_RATE, pcm.channels() >= 2 ? 160000 : 112000);
         aFmt.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1 << 16);
         final MediaCodec audioCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC);
         audioCodec.configure(aFmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
         audioCodec.start();
 
         EglRenderer egl = null;
-        MediaMuxer muxer = null;
-        boolean muxerStarted = false;
         Bitmap frameBmp = null;
+        final MediaMuxer[] muxHolder = new MediaMuxer[1];
+        final boolean[] muxStartedHolder = new boolean[1];
         try {
             egl = new EglRenderer(codecSurface, width, height);
             frameBmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
             Canvas frameCanvas = new Canvas(frameBmp);
-            RenderEngine engine = new RenderEngine();
+            final RenderEngine engine = new RenderEngine();
             engine.setEffect(effect);
             engine.setBackground(background);
-            PcmFrames pcmFrames = new PcmFrames(pcm);
+            final PcmFrames pcmFrames = new PcmFrames(pcm);
 
             final MediaFormat[] videoFormat = new MediaFormat[1];
             final MediaFormat[] audioFormat = new MediaFormat[1];
-            final List<Pending> heldVideo = new ArrayList<>();
-            Sink holdVideo = new Sink() {
-                @Override
-                public void write(Pending p) {
-                    heldVideo.add(p);
-                }
-            };
+            final DeferredSink vSink = new DeferredSink();
+            final DeferredSink aSink = new DeferredSink();
 
-            // phase 1: render frames until the encoder announces its format
+            // phase 1: render frames until the video encoder announces its format
             int f = 0;
             while (videoFormat[0] == null && f < 8 && !cancelled) {
                 renderFrame(engine, frameCanvas, pcmFrames, f);
                 egl.draw(frameBmp, f * FRAME_US * 1000L);
-                drain(videoCodec, holdVideo, videoFormat, false);
+                drain(videoCodec, vSink, videoFormat, false);
                 f++;
             }
             if (videoFormat[0] == null) throw new Exception("video encoder không xuất format");
 
-            // phase 2: encode the whole audio track (buffers held until muxer starts)
-            publish(0.10f, "Mã hóa âm thanh…");
-            List<Pending> pendingAudio = new ArrayList<>();
-            encodeAllAudio(audioCodec, pcm, totalUs, pendingAudio, audioFormat);
-            if (audioFormat[0] == null) throw new Exception("audio encoder không xuất format");
+            // phase 2: encode the whole track; as soon as BOTH formats exist the
+            // muxer starts and every further buffer streams straight through.
+            publish(0.05f, "Mã hóa âm thanh…");
+            encodeAllAudio(audioCodec, pcm, totalUs, aSink, audioFormat, new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        MediaMuxer m = new MediaMuxer(outFile.getPath(),
+                                MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+                        int vt = m.addTrack(videoFormat[0]);
+                        int at = m.addTrack(audioFormat[0]);
+                        m.start();
+                        muxHolder[0] = m;
+                        muxStartedHolder[0] = true;
+                        vSink.arm(m, vt);
+                        aSink.arm(m, at);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            });
+            if (!muxStartedHolder[0]) throw new Exception("audio encoder không xuất format");
 
-            // phase 3: start the muxer, flush everything held so far
-            muxer = new MediaMuxer(outFile.getPath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
-            int videoTrack = muxer.addTrack(videoFormat[0]);
-            int audioTrack = muxer.addTrack(audioFormat[0]);
-            muxer.start();
-            muxerStarted = true;
-            MuxSink vSink = new MuxSink(muxer, videoTrack);
-            for (Pending p : heldVideo) vSink.write(p);
-            heldVideo.clear();
-            MuxSink aSink = new MuxSink(muxer, audioTrack);
-            for (Pending p : pendingAudio) aSink.write(p);
-            pendingAudio.clear();
-
-            // phase 4: remaining video frames
+            // phase 3: remaining video frames, streamed directly to the muxer
             publish(0.30f, "Mã hóa hình ảnh…");
             for (; f < frames; f++) {
                 checkCancel();
@@ -416,33 +542,33 @@ public class VideoExporter {
                 egl.draw(frameBmp, f * FRAME_US * 1000L);
                 drain(videoCodec, vSink, videoFormat, false);
                 if ((f & 7) == 0) {
-                    publish(0.30f + 0.62f * f / frames,
+                    publish(0.30f + 0.65f * f / frames,
                             "Mã hóa hình ảnh " + f + "/" + frames);
                 }
             }
 
-            // phase 5: video EOS
+            // phase 4: video EOS
             checkCancel();
             videoCodec.signalEndOfInputStream();
             drain(videoCodec, vSink, videoFormat, true);
-            publish(0.93f, "Hoàn tất khung hình…");
+            publish(0.96f, "Hoàn tất khung hình…");
 
-            if (muxerStarted) {
+            if (muxStartedHolder[0]) {
                 try {
-                    muxer.stop();
+                    muxHolder[0].stop();
                 } catch (Throwable t) {
                     Log.w(TAG, "muxer.stop failed", t);
                 }
-                muxerStarted = false;
+                muxStartedHolder[0] = false;
             }
         } finally {
-            if (muxer != null) {
+            if (muxHolder[0] != null) {
                 try {
-                    if (muxerStarted) muxer.stop();
+                    if (muxStartedHolder[0]) muxHolder[0].stop();
                 } catch (Throwable ignored) {
                 }
                 try {
-                    muxer.release();
+                    muxHolder[0].release();
                 } catch (Throwable ignored) {
                 }
             }
@@ -488,17 +614,33 @@ public class VideoExporter {
         void write(Pending p) throws Exception;
     }
 
-    private static final class MuxSink implements Sink {
-        private final MediaMuxer muxer;
-        private final int track;
+    /** Holds encoded buffers until the muxer is armed, then streams them through. */
+    private static final class DeferredSink implements Sink {
+        private final List<Pending> held = new ArrayList<>();
+        private MediaMuxer muxer;
+        private int track;
+        private boolean armed;
 
-        MuxSink(MediaMuxer muxer, int track) {
-            this.muxer = muxer;
-            this.track = track;
+        void arm(MediaMuxer m, int trackIndex) throws Exception {
+            muxer = m;
+            track = trackIndex;
+            armed = true;
+            for (int i = 0; i < held.size(); i++) {
+                writeDirect(held.get(i));
+            }
+            held.clear();
         }
 
         @Override
         public void write(Pending p) {
+            if (!armed) {
+                held.add(p);
+            } else {
+                writeDirect(p);
+            }
+        }
+
+        private void writeDirect(Pending p) {
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
             info.set(0, p.bytes.length, p.ptsUs,
                     p.flags & ~(MediaCodec.BUFFER_FLAG_CODEC_CONFIG
@@ -542,42 +684,48 @@ public class VideoExporter {
         }
     }
 
-    private void encodeAllAudio(MediaCodec codec, Pcm pcm, long totalUs,
-                                List<Pending> out, MediaFormat[] fmtOut) throws Exception {
-        short[] data = pcm.data;
-        int ch = pcm.channels;
-        int totalShorts = data.length;
-        long maxShorts = totalUs * pcm.sampleRate / 1_000_000L * ch;
-        if (maxShorts > totalShorts) maxShorts = totalShorts;
-        maxShorts -= maxShorts % ch;
-        int bytesPerGroup = 2 * ch;
-        int offset = 0;
+    /** Feeds the whole PCM stream into the AAC encoder (chunked, constant memory). */
+    private void encodeAllAudio(MediaCodec codec, PcmSource pcm, long totalUs,
+                                Sink sink, MediaFormat[] fmtOut, Runnable onFormatReady)
+            throws Exception {
+        final int ch = pcm.channels();
+        final int sr = pcm.sampleRate();
+        final long maxFrames = Math.max(1, totalUs * sr / 1_000_000L);
+        final short[] chunk = new short[1024 * 2 * ch];
+        long fed = 0;
         boolean inputDone = false;
         boolean outputDone = false;
+        boolean readyFired = false;
         int idleSpins = 0;
         MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
 
         while (!outputDone) {
             checkCancel();
-            if (idleSpins++ > 100000) throw new Exception("audio encoder timeout");
+            if (idleSpins++ > 200000) throw new Exception("audio encoder timeout");
 
             if (!inputDone) {
                 int idx = codec.dequeueInputBuffer(10000);
                 if (idx >= 0) {
                     ByteBuffer ib = codec.getInputBuffer(idx);
                     ib.clear();
-                    int cap = ib.capacity() - (ib.capacity() % bytesPerGroup);
-                    int left = (int) (maxShorts - offset);
-                    int toWrite = Math.min(cap / 2, left);
+                    int capGroups = (ib.capacity() / 2) / ch;
+                    int want = Math.min(1024, Math.max(1, capGroups));
+                    int got = pcm.read(chunk, fed, want);
                     ib.order(ByteOrder.LITTLE_ENDIAN);
-                    ShortBuffer sb = ib.asShortBuffer();
-                    sb.put(data, offset, toWrite);
-                    long ptsUs = (long) offset / ch * 1_000_000L / pcm.sampleRate;
-                    offset += toWrite;
-                    boolean eos = offset >= maxShorts;
-                    codec.queueInputBuffer(idx, 0, toWrite * 2, ptsUs,
-                            eos ? MediaCodec.BUFFER_FLAG_END_OF_STREAM : 0);
-                    if (eos) inputDone = true;
+                    if (got <= 0) {
+                        codec.queueInputBuffer(idx, 0, 0,
+                                fed * 1_000_000L / sr, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                        inputDone = true;
+                    } else {
+                        ShortBuffer sb = ib.asShortBuffer();
+                        sb.put(chunk, 0, got * ch);
+                        long ptsUs = fed * 1_000_000L / sr;
+                        fed += got;
+                        boolean eos = fed >= maxFrames || got < want;
+                        codec.queueInputBuffer(idx, 0, got * ch * 2, ptsUs,
+                                eos ? MediaCodec.BUFFER_FLAG_END_OF_STREAM : 0);
+                        if (eos) inputDone = true;
+                    }
                     idleSpins = 0;
                 }
             }
@@ -587,6 +735,10 @@ public class VideoExporter {
             idleSpins = 0;
             if (idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                 fmtOut[0] = codec.getOutputFormat();
+                if (!readyFired && fmtOut[0] != null) {
+                    readyFired = true;
+                    onFormatReady.run();
+                }
                 continue;
             }
             if (idx == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) continue;
@@ -598,7 +750,7 @@ public class VideoExporter {
                     ob.limit(info.offset + info.size);
                     byte[] bytes = new byte[info.size];
                     ob.get(bytes);
-                    out.add(new Pending(bytes, info.presentationTimeUs, info.flags));
+                    sink.write(new Pending(bytes, info.presentationTimeUs, info.flags));
                 }
                 codec.releaseOutputBuffer(idx, false);
                 if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
@@ -606,16 +758,18 @@ public class VideoExporter {
                 }
             }
         }
+        if (!readyFired) throw new Exception("audio encoder không xuất format");
     }
 
     // ------------------------------------------------------------ PCM frames
 
     static final class PcmFrames implements AudioFrames {
-        private final Pcm pcm;
+        private final PcmSource pcm;
         private final float[] smooth = new float[BANDS];
         private final float[] raw = new float[BANDS];
         private final byte[] wave = new byte[512];
-        private final float[] win = new float[WIN];
+        private final short[] win = new short[WIN * 2];
+        private final float[] mono = new float[WIN];
         private final float[] hann = new float[WIN];
         private final double[] freqs = new double[BANDS];
         private float autoGain = 1f;
@@ -626,7 +780,7 @@ public class VideoExporter {
         private int consumedBeat = -1;
         private long lastBeatMs = -1000;
 
-        PcmFrames(Pcm pcm) {
+        PcmFrames(PcmSource pcm) {
             this.pcm = pcm;
             for (int i = 0; i < WIN; i++) {
                 hann[i] = (float) (0.5 - 0.5 * Math.cos(2.0 * Math.PI * i / (WIN - 1)));
@@ -640,23 +794,20 @@ public class VideoExporter {
         }
 
         void seek(int frameIndex) {
-            int ch = pcm.channels;
-            int totalFrames = pcm.data.length / ch;
-            long startL = (long) frameIndex * FRAME_US * pcm.sampleRate / 1_000_000L;
-            int start = (int) Math.max(0, Math.min(startL, totalFrames - 1));
-
-            java.util.Arrays.fill(win, 0f);
-            int len = Math.min(WIN, totalFrames - start);
-            for (int i = 0; i < len; i++) {
-                int base = (start + i) * ch;
+            int ch = pcm.channels();
+            long startL = (long) frameIndex * FRAME_US * pcm.sampleRate() / 1_000_000L;
+            int got = pcm.read(win, startL, WIN);
+            java.util.Arrays.fill(mono, 0f);
+            for (int i = 0; i < got; i++) {
                 float v;
                 if (ch == 1) {
-                    v = pcm.data[base] / 32768f;
+                    v = win[i] / 32768f;
                 } else {
-                    v = (pcm.data[base] + pcm.data[base + 1]) / 2f / 32768f;
+                    v = (win[2 * i] + win[2 * i + 1]) / 2f / 32768f;
                 }
-                win[i] = v * hann[i];
+                mono[i] = v * hann[i];
             }
+            java.util.Arrays.fill(win, (short) 0, Math.max(got * ch, 0), (short) 0);
 
             float maxRaw = 0f;
             for (int b = 0; b < BANDS; b++) {
@@ -681,27 +832,29 @@ public class VideoExporter {
                 beatVersion++;
             }
 
+            // waveform window for the oscilloscope effect
+            int waveGot = pcm.read(win, Math.max(0, startL - 256), 512);
             for (int i = 0; i < wave.length; i++) {
-                int si = start + i;
+                int si = i;
                 float v = 0f;
-                if (si < totalFrames) {
-                    int base = si * ch;
-                    v = ch == 1 ? pcm.data[base] / 32768f
-                            : (pcm.data[base] + pcm.data[base + 1]) / 2f / 32768f;
+                if (si < waveGot) {
+                    v = ch == 1 ? win[si] / 32768f
+                            : (win[2 * si] + win[2 * si + 1]) / 2f / 32768f;
                 }
                 int iv = (int) (v * 127f);
                 if (iv > 127) iv = 127;
                 if (iv < -128) iv = -128;
                 wave[i] = (byte) (128 + iv);
             }
+            java.util.Arrays.fill(win, (short) 0);
         }
 
         private float goertzel(double freq) {
-            double sr = pcm.sampleRate;
+            double sr = pcm.sampleRate();
             double k = 2.0 * Math.cos(2.0 * Math.PI * freq / sr);
             double s1 = 0, s2 = 0;
             for (int i = 0; i < WIN; i++) {
-                double s0 = win[i] + k * s1 - s2;
+                double s0 = mono[i] + k * s1 - s2;
                 s2 = s1;
                 s1 = s0;
             }
