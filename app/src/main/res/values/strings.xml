@@ -27,7 +27,7 @@
     <string name="save_error">Không lưu được ảnh: %1$s</string>
 
     <string name="export_title">Đang ghi video</string>
-    <string name="export_hint">Tối đa 60 giây — đừng tắt app</string>
+    <string name="export_hint">Ghi full theo bài hát (tối đa 10 phút) — đừng tắt app</string>
     <string name="export_cancel">Hủy</string>
     <string name="export_done">Đã xuất video: %1$s</string>
     <string name="export_error">Lỗi xuất video: %1$s</string>
@@ -50,6 +50,7 @@
         <item>NASA</item>
         <item>Ảnh của tôi</item>
         <item>URL tùy chọn</item>
+        <item>Cảnh ma mị</item>
     </string-array>
 
     <string-array name="effect_names">
@@ -58,5 +59,6 @@
         <item>Sóng</item>
         <item>Hạt sáng</item>
         <item>Xung nhịp</item>
+        <item>Ma mị</item>
     </string-array>
 </resources>

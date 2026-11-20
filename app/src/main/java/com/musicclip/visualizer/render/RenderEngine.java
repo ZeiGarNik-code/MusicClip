@@ -20,7 +20,7 @@ import java.util.Random;
  * (same code path, driven by PCM-derived {@link AudioFrames}).
  */
 public class RenderEngine {
-    public static final int EFFECT_COUNT = 5;
+    public static final int EFFECT_COUNT = 6;
 
     private final float[] bands = new float[AudioFrames.BANDS];
     private final byte[] wave = new byte[512];
@@ -28,6 +28,12 @@ public class RenderEngine {
     private final Matrix covMatrix = new Matrix();
     private final RectF rf = new RectF();
     private final Random rnd = new Random();
+    private final Path fogPath = new Path();
+    private final ArrayList<Wisp> wisps = new ArrayList<Wisp>();
+    private float lastFdt;
+    private float wispTimer;
+    private RadialGradient vignette;
+    private int vigW = -1, vigH = -1;
 
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -94,6 +100,7 @@ public class RenderEngine {
         if (dt > 100_000_000L) dt = 100_000_000L;
         float fdt = dt / 1e9f;
         timeSec += fdt;
+        lastFdt = fdt;
 
         audio.copyBands(bands);
         audio.copyWave(wave);
@@ -127,6 +134,9 @@ public class RenderEngine {
                 break;
             case 4:
                 drawPulse(c, w, h, bass, level);
+                break;
+            case 5:
+                drawPhantom(c, w, h, bass, level);
                 break;
             default:
                 break;
@@ -393,6 +403,11 @@ public class RenderEngine {
             shocks.add(s);
             while (shocks.size() > 6) shocks.remove(0);
         }
+        if (effect == 5) {
+            spawnWisp(w, h);
+            spawnWisp(w, h);
+            spawnWisp(w, h);
+        }
     }
 
     private void updateParticles(float fdt) {
@@ -436,6 +451,131 @@ public class RenderEngine {
         stroke.setStyle(Paint.Style.FILL);
     }
 
+    // ------------------------------------------------------- effect: Ma mị
+
+    /**
+     * "Ma mị" (eerie/haunting): dark veil, ghost moon with halo, drifting fog
+     * bands, rising spirit wisps, fireflies and a heavy vignette — all beat-aware.
+     */
+    private void drawPhantom(Canvas c, int w, int h, float bass, float level) {
+        float minDim = Math.min(w, h);
+
+        // eerie purple veil over the background
+        fill.setColor(Color.argb(72, 26, 4, 44));
+        c.drawRect(0, 0, w, h, fill);
+
+        // --- ghost moon (top-right) with pulsing halo
+        float mx = w * 0.78f;
+        float my = h * 0.17f;
+        float mr = minDim * 0.075f * (1f + 0.07f * beatEnv);
+        for (int i = 3; i >= 1; i--) {
+            fill.setColor(Color.argb((int) (14 * (4 - i) * (0.6f + 0.5f * beatEnv)),
+                    216, 226, 208));
+            c.drawCircle(mx, my, mr * (1f + i * 0.6f), fill);
+        }
+        fill.setColor(Color.argb(228, 236, 240, 222));
+        c.drawCircle(mx, my, mr, fill);
+        fill.setColor(Color.argb(34, 110, 120, 110));
+        c.drawCircle(mx - mr * 0.30f, my - mr * 0.15f, mr * 0.24f, fill);
+        c.drawCircle(mx + mr * 0.26f, my + mr * 0.30f, mr * 0.17f, fill);
+        c.drawCircle(mx + mr * 0.05f, my - mr * 0.40f, mr * 0.12f, fill);
+
+        // --- drifting fog bands
+        stroke.setStyle(Paint.Style.STROKE);
+        stroke.setStrokeCap(Paint.Cap.ROUND);
+        int fogBoost = (int) (34 * beatEnv + 18 * level);
+        for (int layer = 0; layer < 4; layer++) {
+            float baseY = h * (0.30f + 0.16f * layer);
+            float amp = h * (0.030f + 0.013f * layer);
+            float speed = (0.5f + 0.22f * layer) * (layer % 2 == 0 ? 1f : -1f);
+            int alpha = 24 + layer * 6 + fogBoost;
+            if (alpha > 135) alpha = 135;
+            stroke.setColor(Color.argb(alpha, 208, 214, 232));
+            stroke.setStrokeWidth(h * (0.050f + 0.022f * layer));
+            fogPath.reset();
+            int steps = 22;
+            for (int s = 0; s <= steps; s++) {
+                float x = w * s / (float) steps;
+                float y = baseY + (float) Math.sin(
+                        (x / w) * 6.0f + timeSec * speed + layer * 1.7f) * amp;
+                if (s == 0) fogPath.moveTo(x, y);
+                else fogPath.lineTo(x, y);
+            }
+            c.drawPath(fogPath, stroke);
+        }
+
+        // --- spirit wisps rising
+        updateWisps(lastFdt, w, h);
+        for (int i = 0; i < wisps.size(); i++) {
+            Wisp s = wisps.get(i);
+            float t = s.life / s.max;
+            if (t >= 1f) continue;
+            int alpha = (int) (190 * Math.sin(Math.PI * Math.min(1f, t)));
+            if (alpha <= 0) continue;
+            fill.setColor(hueA(s.hue, 0.40f, 1f, alpha / 3));
+            c.drawCircle(s.x, s.y, s.size * 3.4f, fill);
+            fill.setColor(hueA(s.hue, 0.45f, 1f, alpha / 2));
+            c.drawCircle(s.x, s.y - s.size * 1.5f, s.size * 0.75f, fill);
+            fill.setColor(hueA(s.hue, 0.35f, 1f, alpha));
+            c.drawCircle(s.x, s.y, s.size, fill);
+        }
+
+        // --- fireflies
+        for (int k = 0; k < 26; k++) {
+            float sx = ((k * 73) % 101) / 101f * w;
+            float sy = ((k * 41) % 97) / 97f * h;
+            double tw = 0.5 + 0.5 * Math.sin(timeSec * (1.3 + (k % 5) * 0.37) + k);
+            int a = (int) (120 * tw * tw * (0.6f + 0.4f * beatEnv));
+            fill.setColor(Color.argb(a, 172, 255, 205));
+            c.drawCircle(sx, sy, 1.6f + (k % 3) * 0.8f + beatEnv * 1.4f, fill);
+        }
+
+        // --- vignette (dark corners)
+        if (vigW != w || vigH != h || vignette == null) {
+            vignette = new RadialGradient(w / 2f, h * 0.45f, Math.max(w, h) * 0.75f,
+                    Color.TRANSPARENT, Color.argb(170, 0, 0, 0), Shader.TileMode.CLAMP);
+            vigW = w;
+            vigH = h;
+        }
+        fill.setShader(vignette);
+        c.drawRect(0, 0, w, h, fill);
+        fill.setShader(null);
+
+        stroke.setStyle(Paint.Style.FILL);
+    }
+
+    private void updateWisps(float fdt, int w, int h) {
+        for (int i = wisps.size() - 1; i >= 0; i--) {
+            Wisp s = wisps.get(i);
+            s.life += fdt;
+            if (s.life >= s.max) {
+                wisps.remove(i);
+                continue;
+            }
+            s.y -= s.vy * fdt;
+            s.x += (float) Math.sin(timeSec * 1.2 + s.phase) * 30f * fdt;
+        }
+        wispTimer -= fdt;
+        if (wispTimer <= 0) {
+            wispTimer = 0.5f + rnd.nextFloat() * 0.9f;
+            spawnWisp(w, h);
+        }
+    }
+
+    private void spawnWisp(int w, int h) {
+        if (wisps.size() > 26) return;
+        Wisp s = new Wisp();
+        s.x = rnd.nextFloat() * w;
+        s.y = h * (0.72f + rnd.nextFloat() * 0.34f);
+        s.vy = 42f + rnd.nextFloat() * 75f;
+        s.max = 3.2f + rnd.nextFloat() * 3.2f;
+        s.life = 0f;
+        s.size = 5.5f + rnd.nextFloat() * 9f;
+        s.hue = 145f + rnd.nextFloat() * 75f; // pale green → cyan spirits
+        s.phase = rnd.nextFloat() * 6.28f;
+        wisps.add(s);
+    }
+
     // ----------------------------------------------------------------- models
 
     private static final class Particle {
@@ -445,5 +585,9 @@ public class RenderEngine {
     private static final class Shock {
         float r, speed;
         int alpha;
+    }
+
+    private static final class Wisp {
+        float x, y, vy, phase, life, max, size, hue;
     }
 }
