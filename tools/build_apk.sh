@@ -19,8 +19,8 @@ BUILD="$ROOT/build/sandbox"
 DIST="$ROOT/dist"
 APP="$ROOT/app/src/main"
 
-VERSION_NAME="1.1.0"
-VERSION_CODE=3
+VERSION_NAME="1.1.1"
+VERSION_CODE=4
 MIN_SDK=24
 TARGET_SDK=33
 APK_NAME="MusicClip-Visualizer-v${VERSION_NAME}.apk"

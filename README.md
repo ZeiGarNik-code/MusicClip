@@ -2,7 +2,7 @@
 
 **App Android (APK) tạo visual theo nhạc — mã nguồn mở, nhạc có sẵn, hình ảnh lấy từ các trang miễn phí.**
 
-MusicClip Visualizer phát nhạc (bài có sẵn trong app + nhạc trên máy của bạn) và vẽ **hiệu ứng trực tiếp theo tần số nhạc** (FFT) làm hình nền cho điện thoại. Bạn có thể **chụp ảnh PNG** hoặc **ghi video MP4 full theo thời lượng bài hát** (tối đa 10 phút) để chia sẻ.
+MusicClip Visualizer phát nhạc (bài có sẵn trong app + nhạc trên máy của bạn) và vẽ **hiệu ứng trực tiếp theo tần số nhạc** (FFT) làm hình nền cho điện thoại. Bạn có thể **chụp ảnh PNG** hoặc **ghi video MP4 full theo thời lượng bài hát** (tối đa 180 phút, dọc 1080×1920@30fps **chuẩn TikTok**) để chia sẻ.
 
 ---
 
@@ -15,14 +15,14 @@ MusicClip Visualizer phát nhạc (bài có sẵn trong app + nhạc trên máy 
 | 📊 **6 hiệu ứng** | Thanh phổ · Vòng tròn · Sóng · Hạt sáng · Xung nhịp · **Ma mị** (sương, linh hồn bay, trăng ma) — nhận diện cả **nhịp (beat)** |
 | 🖼️ **Nguồn hình miễn phí** | Picsum (Unsplash) · Wikimedia Commons · Openverse · NASA · Ảnh của máy · URL tùy chọn · **Cảnh ma mị** |
 | 📷 **Chụp ảnh** | Lưu PNG vào `Pictures/MusicClip` |
-| 🎬 **Ghi video** | Export MP4 **full theo bài hát** (tối đa 10 phút), 720×1280@30fps (H.264 + AAC) vào `Movies/MusicClip` |
+| 🎬 **Ghi video** | Export MP4 **full theo bài hát** (tối đa 180 phút), **1080×1920@30fps dọc 9:16 chuẩn TikTok** (H.264 + AAC ~10 Mbps) vào `Movies/MusicClip` |
 | 🔒 **Zero tracking, zero ads, zero third-party SDK** | Chỉ dùng framework Android |
 
 ---
 
 ## 📦 Cài đặt
 
-1. Tải `dist/MusicClip-Visualizer-v1.1.0.apk` từ repo.
+1. Tải `dist/MusicClip-Visualizer-v1.1.1.apk` từ repo.
 2. Cài đặt lên điện thoại Android 7.0+ (API 24+). Bật **"Cho phép cài từ nguồn không xác định"** nếu được hỏi.
 3. Mở app → chọn nhạc + nguồn hình → **BẮT ĐẦU**.
 
@@ -71,7 +71,7 @@ Yêu cầu: Android Studio / JDK 11+, SDK 33. *(Cấu hình Gradle chuẩn, khô
 
 ```bash
 tools/fetch_toolchain.sh       # 1 lần: tải toolchain vào .toolchain/ (JDK, android.jar, aapt2, d8, apksigner)
-tools/build_apk.sh             # build -> dist/MusicClip-Visualizer-v1.1.0.apk
+tools/build_apk.sh             # build -> dist/MusicClip-Visualizer-v1.1.1.apk
 ```
 
 Pipeline: `aapt2 compile/link → javac → d8 → zipalign → apksigner`. Xem chi tiết từng công cụ trong [`tools/README-toolchain.md`](tools/README-toolchain.md).
@@ -104,7 +104,7 @@ app/src/main/
 └── assets/music/*.wav               # 3 bài có sẵn (tạo bởi tools/make_music.py)
 
 tools/                               # scripts build + sinh tài nguyên
-dist/MusicClip-Visualizer-v1.1.0.apk # APK đã ký, cài được ngay
+dist/MusicClip-Visualizer-v1.1.1.apk # APK đã ký, cài được ngay
 ```
 
 **Quy trình xuất video:** đọc PCM (WAV asset hoặc giải mã bài trên máy bằng MediaCodec) → mã hóa AAC; đồng thời RenderEngine vẽ từng khung vào Bitmap → nạp texture GL → encoder H.264 (input surface, PTS qua `eglPresentationTimeANDROID`) → gộp bằng `MediaMuxer`.
@@ -131,4 +131,4 @@ dist/MusicClip-Visualizer-v1.1.0.apk # APK đã ký, cài được ngay
 
 ## English summary
 
-**MusicClip Visualizer** is an open-source Android app (pure Java, zero dependencies) that turns music into live visuals: 3 built-in royalty-free tracks + your device library, 6 beat-reactive effects (including a foggy "Ma mị" phantom mode) driven by real FFT analysis, free image backgrounds from Picsum / Wikimedia Commons / Openverse / NASA (no API key), PNG screenshots and full-song MP4 export (up to 10 minutes). Build with Android Studio (`./gradlew assembleDebug`) or with the fully offline script pipeline (`tools/build_apk.sh`) that needs no Gradle and no Android SDK.
+**MusicClip Visualizer** is an open-source Android app (pure Java, zero dependencies) that turns music into live visuals: 3 built-in royalty-free tracks + your device library, 6 beat-reactive effects (including a foggy "Ma mị" phantom mode) driven by real FFT analysis, free image backgrounds from Picsum / Wikimedia Commons / Openverse / NASA (no API key), PNG screenshots and full-song MP4 export (up to 180 minutes, TikTok-ready vertical 1080×1920@30fps). Build with Android Studio (`./gradlew assembleDebug`) or with the fully offline script pipeline (`tools/build_apk.sh`) that needs no Gradle and no Android SDK.

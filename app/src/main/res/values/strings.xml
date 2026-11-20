@@ -27,7 +27,7 @@
     <string name="save_error">Không lưu được ảnh: %1$s</string>
 
     <string name="export_title">Đang ghi video</string>
-    <string name="export_hint">Ghi full theo bài hát (tối đa 10 phút) — đừng tắt app</string>
+    <string name="export_hint">Ghi full theo bài hát (tối đa 180 phút, chuẩn TikTok 1080×1920) — đừng tắt app</string>
     <string name="export_cancel">Hủy</string>
     <string name="export_done">Đã xuất video: %1$s</string>
     <string name="export_error">Lỗi xuất video: %1$s</string>

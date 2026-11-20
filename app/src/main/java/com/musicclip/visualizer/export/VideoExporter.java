@@ -59,8 +59,8 @@ public class VideoExporter {
     private static final String TAG = "VideoExporter";
     private static final int FPS = 30;
     private static final long FRAME_US = 1_000_000L / FPS;
-    /** Hard safety cap: export at most the first 10 minutes of a track. */
-    private static final long MAX_AUDIO_US = 10L * 60 * 1_000_000L;
+    /** Hard safety cap: export at most the first 180 minutes of a track. */
+    private static final long MAX_AUDIO_US = 180L * 60 * 1_000_000L;
     private static final int WIN = 1024;
 
     public interface Listener {
@@ -464,7 +464,8 @@ public class VideoExporter {
         MediaFormat vFmt = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height);
         vFmt.setInteger(MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-        vFmt.setInteger(MediaFormat.KEY_BIT_RATE, 6_000_000);
+        // TikTok-ready 1080x1920@30: ~10 Mbps is the recommended upload bitrate
+        vFmt.setInteger(MediaFormat.KEY_BIT_RATE, 10_000_000);
         vFmt.setInteger(MediaFormat.KEY_FRAME_RATE, FPS);
         vFmt.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1);
         final MediaCodec videoCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
