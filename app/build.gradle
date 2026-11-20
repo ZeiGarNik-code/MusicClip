@@ -1,0 +1,34 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.musicclip.visualizer'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "com.musicclip.visualizer"
+        minSdk 24
+        targetSdk 33
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Sideload-friendly: sign release with the committed debug-style keystore.
+            // Replace with your own keystore for Play Store publishing.
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    // Intentionally empty: pure Android framework, zero third-party libraries.
+}

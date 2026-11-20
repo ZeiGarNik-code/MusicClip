@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MusicClip Visualizer</string>
+    <string name="subtitle">Tạo visual cho nhạc của bạn</string>
+    <string name="source_label">Nguồn hình ảnh</string>
+    <string name="music_section">Danh sách nhạc</string>
+    <string name="start">BẮT ĐẦU</string>
+    <string name="builtin_badge">CÓ SẴN</string>
+    <string name="device_badge">THIẾT BỊ</string>
+    <string name="builtin_hint">3 bài hát tích hợp sẵn (miễn phí, nhúng trong app)</string>
+    <string name="empty_device_music">Không tìm thấy nhạc trên thiết bị — chỉ có nhạc có sẵn</string>
+    <string name="grant_permission_hint">Cấp quyền đọc nhạc để thấy bài hát trên máy</string>
+    <string name="grant_permission_button">Cấp quyền</string>
+
+    <string name="btn_back">Thoát</string>
+    <string name="btn_pause">Tạm dừng</string>
+    <string name="btn_play">Phát</string>
+    <string name="btn_effect">Hiệu ứng</string>
+    <string name="btn_background">Hình nền</string>
+    <string name="btn_screenshot">Chụp</string>
+    <string name="btn_export">Ghi video</string>
+
+    <string name="effect_toast">Hiệu ứng: %1$s</string>
+    <string name="source_toast">Hình nền từ: %1$s</string>
+    <string name="source_error">Nguồn %1$s lỗi — chuyển sang Picsum</string>
+    <string name="saved_toast">Đã lưu ảnh: %1$s</string>
+    <string name="save_error">Không lưu được ảnh: %1$s</string>
+
+    <string name="export_title">Đang ghi video</string>
+    <string name="export_hint">Tối đa 60 giây — đừng tắt app</string>
+    <string name="export_cancel">Hủy</string>
+    <string name="export_done">Đã xuất video: %1$s</string>
+    <string name="export_error">Lỗi xuất video: %1$s</string>
+
+    <string name="url_title">Nhập URL hình ảnh</string>
+    <string name="url_hint">https://example.com/anh.jpg</string>
+    <string name="ok">Đồng ý</string>
+    <string name="cancel">Hủy</string>
+
+    <string name="need_mic_permission">Cần quyền ghi âm để phân tích tần số nhạc (hiệu ứng sẽ chạy mô phỏng nếu từ chối)</string>
+    <string name="need_audio_permission">Cần quyền đọc nhạc trên thiết bị</string>
+    <string name="need_storage_permission">Cần quyền lưu bộ nhớ để xuất video</string>
+
+    <string name="now_playing">Đang phát: %1$s</string>
+
+    <string-array name="source_names">
+        <item>Picsum (Unsplash)</item>
+        <item>Wikimedia Commons</item>
+        <item>Openverse</item>
+        <item>NASA</item>
+        <item>Ảnh của tôi</item>
+        <item>URL tùy chọn</item>
+    </string-array>
+
+    <string-array name="effect_names">
+        <item>Thanh phổ</item>
+        <item>Vòng tròn</item>
+        <item>Sóng</item>
+        <item>Hạt sáng</item>
+        <item>Xung nhịp</item>
+    </string-array>
+</resources>
