@@ -1,0 +1,1588 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MusicClip Visualizer — Visual LED đi cảnh</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000;
+    font-family: "Segoe UI", Roboto, system-ui, sans-serif; color: #e8e8f0; }
+  #cv { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5;
+    transition: opacity .35s ease; }
+  #hud.hidden { opacity: 0; }
+
+  #top { position: absolute; top: 0; left: 0; right: 0; padding: 14px 18px;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  #brand { background: rgba(10,10,24,.55); border: 1px solid rgba(140,120,255,.35);
+    border-radius: 12px; padding: 8px 14px; backdrop-filter: blur(8px); }
+  #brand b { font-size: 15px; letter-spacing: .4px;
+    background: linear-gradient(90deg,#7af9ff,#c084fc,#fb7185);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #brand span { display: block; font-size: 11px; opacity: .75; margin-top: 2px; }
+  #beatBadge { background: rgba(10,10,24,.55); border: 1px solid rgba(250,120,160,.4);
+    border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 600;
+    color: #ffb3c7; min-width: 96px; text-align: center; backdrop-filter: blur(8px); }
+
+  #bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center;
+    background: linear-gradient(transparent, rgba(5,5,16,.82) 45%); pointer-events: auto; }
+  .btn { border: 1px solid rgba(150,150,220,.35); background: rgba(18,18,40,.8);
+    color: #eef; border-radius: 12px; padding: 10px 14px; font-size: 14px; font-weight: 600;
+    cursor: pointer; user-select: none; backdrop-filter: blur(8px); white-space: nowrap;
+    transition: transform .08s, border-color .15s, background .15s; }
+  .btn:hover { border-color: rgba(180,160,255,.8); background: rgba(34,30,70,.9); }
+  .btn:active { transform: scale(.95); }
+  .btn.primary { background: linear-gradient(135deg,#5b21b6,#be185d); border-color: rgba(255,160,220,.55); }
+  .btn.on { background: linear-gradient(135deg,#0e7490,#7c3aed); border-color: rgba(140,220,255,.8); }
+  #fxName { min-width: 150px; text-align: center; font-weight: 700; color: #9ff3ff;
+    background: rgba(8,20,34,.85); border: 1px solid rgba(90,220,255,.5); border-radius: 12px;
+    padding: 10px 12px; font-size: 14px; }
+  #vol { width: 90px; accent-color: #c084fc; }
+  #trackName { position: absolute; left: 50%; transform: translateX(-50%); bottom: 78px;
+    font-size: 12px; opacity: .8; background: rgba(0,0,0,.45); padding: 4px 12px;
+    border-radius: 999px; max-width: 86vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  [hidden] { display: none !important; }
+  #fxPop { position: absolute; inset: 0; z-index: 8; overflow: auto;
+    background: rgba(4,4,14,.92); backdrop-filter: blur(6px);
+    display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start;
+    justify-content: center; padding: 56px 14px 90px; pointer-events: auto; }
+  .fxi { border: 1px solid rgba(150,150,220,.35); background: rgba(24,22,52,.9);
+    color: #eef; border-radius: 10px; padding: 10px 12px; font-size: 13px; font-weight: 600;
+    cursor: pointer; min-width: 150px; text-align: center; }
+  .fxi:hover { border-color: rgba(180,160,255,.9); background: rgba(46,40,92,.95); }
+  .fxi.cur { background: linear-gradient(135deg,#0e7490,#7c3aed);
+    border-color: rgba(140,220,255,.9); color: #fff; }
+  #fxClose { position: absolute; top: 12px; right: 14px; }
+
+  #start { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 18px; background: #05050f;
+    background-image: radial-gradient(ellipse at 50% 30%, #1a1040 0%, #05050f 65%);
+    text-align: center; padding: 24px; cursor: pointer; }
+  #start h1 { font-size: clamp(26px, 6vw, 44px); letter-spacing: 1px;
+    background: linear-gradient(90deg,#7af9ff,#c084fc,#fb7185);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #start p { opacity: .8; font-size: 15px; max-width: 520px; line-height: 1.55; }
+  #start .go { margin-top: 8px; font-size: 18px; padding: 16px 42px; border-radius: 999px;
+    background: linear-gradient(135deg,#5b21b6,#be185d); border: 1px solid rgba(255,170,220,.6);
+    color: #fff; font-weight: 700; box-shadow: 0 0 40px rgba(190,24,93,.45); }
+  #start small { opacity: .55; font-size: 12px; }
+  .hint { font-size: 12px; opacity: .6; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="hud">
+  <div id="top">
+    <div id="brand"><b>MusicClip Visualizer</b><span>Visual LED đi cảnh · bloom · crossfade mượt</span></div>
+    <div id="beatBadge">♪ Đang chờ…</div>
+  </div>
+  <div id="trackName">Nhạc mẫu Vinahouse 128 BPM</div>
+  <div id="bar">
+    <button class="btn primary" id="btnPlay" title="Space">▶ Phát</button>
+    <button class="btn" id="btnSample" title="Nhạc mẫu">♪ Nhạc mẫu</button>
+    <button class="btn" id="btnFile">📁 Chọn file nhạc</button>
+    <input type="file" id="fileInput" accept="audio/*" hidden>
+    <button class="btn" id="btnPrev" title="←">◀</button>
+    <div id="fxName">—</div>
+    <button class="btn" id="btnNext" title="→">▶</button>
+    <button class="btn" id="btnAuto">⏱ Tự đổi</button>
+    <button class="btn" id="btnDl" title="Tải trang về máy — mở offline bất cứ lúc nào">⬇ Tải offline</button>
+    <button class="btn" id="btnFs" title="F">⛶ Full</button>
+    <button class="btn" id="btnHide" title="H">👁 Ẩn UI</button>
+    <input type="range" id="vol" min="0" max="100" value="80" title="Âm lượng">
+  </div>
+  <div id="fxPop" hidden>
+    <button class="btn" id="fxClose">✕ Đóng</button>
+  </div>
+</div>
+
+<div id="start">
+  <h1>MUSICCLIP VISUALIZER</h1>
+  <p>Visual LED kiểu bar/club — tunnel neon, sóng hình học, vũ trụ, thành phố đêm…
+     đồng bộ theo nhịp bài hát. Chạy được trên <b>laptop/PC</b> và <b>điện thoại</b> (trình duyệt).</p>
+  <button class="go">▶ BẮT ĐẦU</button>
+  <small>Bấm để bật âm thanh (chính sách autoplay của trình duyệt) · Space: phát/dừng · ←/→: đổi hiệu ứng · F: fullscreen · H: ẩn UI</small>
+</div>
+
+<script>
+"use strict";
+/* ============================== helpers ============================== */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+/* frame-rate independent smoothing: silky at 30/60/120 Hz alike */
+const damp = (a, b, lambda, dt) => a + (b - a) * (1 - Math.exp(-lambda * dt));
+const easeIO = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const TAU = Math.PI * 2;
+function hsl(h, s, l, a) {
+  h = ((h % 360) + 360) % 360;
+  return a === undefined ? "hsl(" + h + "," + s + "%," + l + "%)"
+    : "hsla(" + h + "," + s + "%," + l + "%," + a + ")";
+}
+
+/* ============================== audio ============================== */
+const AudioSys = {
+  ctx: null, analyser: null, master: null,
+  freq: null, time: null, prevFlux: null,
+  // state
+  mode: "sample",          // "sample" | "file"
+  playing: false,
+  element: null,           // <audio> for file mode
+  elementSrc: null,
+  // procedural sequencer
+  seq: { timer: 0, next: 0, step: 0, bpm: 128 },
+  gainFile: null, gainSeq: null,
+
+  init() {
+    if (this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new AC();
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 2048;
+    this.analyser.smoothingTimeConstant = 0.72;
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.8;
+    this.master.connect(this.analyser);
+    this.analyser.connect(this.ctx.destination);
+    this.freq = new Uint8Array(this.analyser.frequencyBinCount);
+    this.time = new Uint8Array(this.analyser.fftSize);
+    this.prevFlux = new Float32Array(this.analyser.frequencyBinCount);
+
+    this.gainSeq = this.ctx.createGain();
+    this.gainSeq.gain.value = 1;
+    this.gainSeq.connect(this.master);
+
+    this.element = new Audio();
+    this.element.loop = true;
+    this.element.crossOrigin = "anonymous";
+    this.gainFile = this.ctx.createGain();
+    this.gainFile.gain.value = 1;
+    // element source created lazily on first user gesture
+  },
+
+  ensureElementSrc() {
+    if (this.elementSrc || !this.element.src) return;
+    this.elementSrc = this.ctx.createMediaElementSource(this.element);
+    this.elementSrc.connect(this.gainFile);
+    this.gainFile.connect(this.master);
+  },
+
+  setVolume(v) { if (this.master) this.master.gain.value = v; },
+
+  playSample() {
+    this.init();
+    this.ctx.resume();
+    this.stopFile();
+    this.mode = "sample";
+    if (!this.seq.timer) {
+      this.seq.next = this.ctx.currentTime + 0.08;
+      this.seq.step = 0;
+      this.seq.timer = setInterval(() => this.schedule(), 25);
+    }
+    this.playing = true;
+    UI.syncPlay();
+  },
+
+  playFile(url, name) {
+    this.init();
+    this.ctx.resume();
+    this.stopSample();
+    this.mode = "file";
+    this.element.src = url;
+    this.ensureElementSrc();
+    this.element.play().catch(() => {});
+    this.playing = true;
+    UI.trackName.textContent = name;
+    UI.syncPlay();
+  },
+
+  stopSample() {
+    if (this.seq.timer) { clearInterval(this.seq.timer); this.seq.timer = 0; }
+  },
+
+  stopFile() {
+    if (this.element && !this.element.paused) this.element.pause();
+  },
+
+  toggle() {
+    if (!this.ctx) { this.playSample(); return; }
+    if (this.playing) {
+      this.playing = false;
+      this.stopSample();
+      this.stopFile();
+    } else {
+      this.playing = true;
+      if (this.mode === "sample") this.playSample();
+      else { this.ctx.resume(); this.element.play().catch(() => {}); }
+    }
+    UI.syncPlay();
+  },
+
+  /* ---- procedural Vinahouse-ish loop (128 BPM, minor progression) ---- */
+  schedule() {
+    const s = this.seq;
+    const spb = 60 / s.bpm;          // sec per beat
+    const spst = spb / 4;            // sec per 16th
+    while (s.next < this.ctx.currentTime + 0.12) {
+      this.playStep(s.step, s.next, spb);
+      s.next += spst;
+      s.step = (s.step + 1) % 64;    // 4 bars of 16
+    }
+  },
+
+  playStep(step, t, spb) {
+    const bar = Math.floor(step / 16) % 4;
+    const i = step % 16;
+    const roots = [110.0, 87.31, 130.81, 98.0]; // A2 F2 C3 G2 (Am-ish loop)
+    const root = roots[bar];
+    const out = this.gainSeq;
+
+    // kick: 4-on-floor
+    if (i % 4 === 0) this.kick(t, out);
+    // clap on 2 & 4
+    if (i === 4 || i === 12) this.noise(t, 0.14, 1600, 4200, 0.5, out);
+    // hats on offbeat 8ths + 16th ghosts
+    if (i % 4 === 2) this.noise(t, 0.05, 6000, 12000, 0.34, out);
+    if (i === 7 || i === 15) this.noise(t, 0.03, 7000, 13000, 0.2, out);
+    // bass: offbeat bounce (vinahouse)
+    if (i % 2 === 1) this.bass(t, root / 2, spb * 0.42, out);
+    // sub on downbeats
+    if (i === 0) this.bass(t, root / 2, spb * 0.5, out, 0.9);
+    // arp pentatonic
+    const penta = [0, 3, 5, 7, 10, 12];
+    if (i % 2 === 0 && (i === 0 || i === 6 || i === 8 || i === 14)) {
+      const n = penta[(step + bar * 2) % penta.length];
+      this.lead(t, root * 2 * Math.pow(2, n / 12), out);
+    }
+    // chord stab on the "and" of 1
+    if (i === 6 || i === 14) this.stab(t, root, out);
+  },
+
+  kick(t, out) {
+    const c = this.ctx;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(160, t);
+    o.frequency.exponentialRampToValueAtTime(46, t + 0.11);
+    g.gain.setValueAtTime(1.0, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.30);
+    o.connect(g); g.connect(out);
+    o.start(t); o.stop(t + 0.34);
+  },
+
+  bass(t, f, dur, out, vol) {
+    const c = this.ctx;
+    const o = c.createOscillator(), g = c.createGain(), lp = c.createBiquadFilter();
+    o.type = "sawtooth"; o.frequency.value = f;
+    lp.type = "lowpass"; lp.frequency.setValueAtTime(320, t);
+    lp.frequency.exponentialRampToValueAtTime(140, t + dur);
+    lp.Q.value = 7;
+    const v = vol === undefined ? 0.55 : vol;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(v, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(lp); lp.connect(g); g.connect(out);
+    o.start(t); o.stop(t + dur + 0.05);
+  },
+
+  lead(t, f, out) {
+    const c = this.ctx;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = "square"; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.16, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    o.connect(g); g.connect(out);
+    o.start(t); o.stop(t + 0.26);
+  },
+
+  stab(t, root, out) {
+    const c = this.ctx;
+    const g = c.createGain(), lp = c.createBiquadFilter();
+    lp.type = "lowpass"; lp.frequency.value = 2600; lp.Q.value = 2;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    lp.connect(g); g.connect(out);
+    [1, 1.1892, 1.4983].forEach((r, k) => {   // minor-ish triad
+      const o = c.createOscillator();
+      o.type = k === 0 ? "sawtooth" : "square";
+      o.frequency.value = root * 2 * r;
+      o.detune.value = (k - 1) * 6;
+      o.connect(lp);
+      o.start(t); o.stop(t + 0.32);
+    });
+  },
+
+  noise(t, dur, hp, lp, vol, out) {
+    const c = this.ctx;
+    const n = Math.floor(c.sampleRate * dur);
+    const buf = c.createBuffer(1, n, c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.value = Math.sqrt(hp * lp); bp.Q.value = 1.2;
+    const g = c.createGain(); g.gain.value = vol;
+    src.connect(bp); bp.connect(g); g.connect(out);
+    src.start(t);
+  }
+};
+
+/* ============================ beat detect ============================ */
+const Beat = {
+  flux: 0, energy: 0, avg: 0.12, cool: 0, env: 0, lastT: 0, bass: 0,
+  update(dt, now) {
+    const a = AudioSys.analyser;
+    if (!a || !AudioSys.playing) {
+      this.env *= Math.exp(-dt * 4.5);
+      this.flux *= Math.exp(-dt * 8);
+      this.bass = damp(this.bass, 0, 6, dt);
+      this.energy = damp(this.energy, 0, 6, dt);
+      return;
+    }
+    a.getByteFrequencyData(AudioSys.freq);
+    a.getByteTimeDomainData(AudioSys.time);
+    const f = AudioSys.freq;
+
+    let sum = 0, bass = 0, flux = 0;
+    const N = 160; // ~ up to ~3.4kHz @48k/2048
+    for (let i = 2; i < N; i++) {
+      const v = f[i] / 255;
+      sum += v;
+      const d = v - (AudioSys.prevFlux[i] / 255);
+      if (d > 0) flux += d;
+      AudioSys.prevFlux[i] = f[i];
+    }
+    for (let i = 2; i < 14; i++) bass += f[i] / 255;
+    bass /= 12;
+    this.flux = flux / N;
+
+    // silky meters: exponential smoothing, independent of frame rate
+    this.energy = damp(this.energy, sum / N, 7, dt);
+    this.bass = damp(this.bass, bass, 9, dt);
+
+    // adaptive threshold
+    this.avg = lerp(this.avg, this.flux, 1 - Math.exp(-dt * 3.6));
+    const thresh = this.avg * 1.55 + 0.006;
+    if (this.cool > 0) this.cool -= dt * 1000;
+    if (this.flux > thresh && this.cool <= 0 && now - this.lastT > 260) {
+      this.lastT = now;
+      this.cool = 240;
+      this.env = 1;
+      Effects.onBeat();
+    } else {
+      this.env *= Math.exp(-dt * 4.5);   // smooth ~0.7s tail, no fps dependence
+    }
+  }
+};
+
+/* ======================= effects (đi cảnh LED) ======================= */
+/* Each effect: { name, init(w,h), draw(ctx,w,h,t,dt) }               */
+/* Shared read-only signals: Beat.env (0..1), Beat.bass, Beat.energy   */
+
+function vignette(ctx, w, h, str) {
+  const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.32,
+                                     w / 2, h / 2, Math.max(w, h) * 0.75);
+  g.addColorStop(0, "rgba(0,0,0,0)");
+  g.addColorStop(1, str || "rgba(0,0,0,0.55)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+}
+
+/* --- 1. Tunnel neon (đi cảnh xuyên hầm ánh sáng) --- */
+const fxTunnel = {
+  name: "Đi cảnh · Tunnel neon",
+  rings: [], hue: 0,
+  init() {
+    this.rings = [];
+    for (let i = 0; i < 26; i++) this.rings.push({ z: i / 26 });
+  },
+  draw(ctx, w, h, t, dt) {
+    const cx = w / 2 + Math.sin(t * 0.4) * w * 0.05;
+    const cy = h / 2 + Math.cos(t * 0.31) * h * 0.04;
+    const speed = 0.16 + Beat.bass * 0.55 + Beat.env * 0.35;
+    this.hue += dt * (18 + Beat.env * 60);
+    ctx.fillStyle = "rgba(2,2,10,0.42)";
+    ctx.fillRect(0, 0, w, h);
+    const maxR = Math.hypot(w, h) * 0.62;
+    for (const r of this.rings) {
+      r.z -= dt * speed;
+      if (r.z <= 0.015) { r.z += 1; }
+      const zz = r.z;
+      const rad = maxR * (1 - zz) * (1 - zz) * 0.98 + 2;
+      const hue = this.hue + zz * 260;
+      const a = clamp((1 - zz) * 1.4, 0, 1) * (0.5 + Beat.env * 0.5);
+      ctx.strokeStyle = hsl(hue, 92, 62, a);
+      ctx.lineWidth = 2 + (1 - zz) * (5 + Beat.env * 7);
+      ctx.beginPath();
+      const sides = 6;
+      for (let s = 0; s <= sides; s++) {
+        const ang = (s / sides) * TAU + t * 0.35 + zz * 2.2;
+        const x = cx + Math.cos(ang) * rad * 1.15;
+        const y = cy + Math.sin(ang) * rad * 0.85;
+        if (s === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // center glow
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR * 0.28);
+    g.addColorStop(0, hsl(this.hue + 180, 90, 70, 0.5 + Beat.env * 0.4));
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 2. Sóng hình học (synthwave grid + sun) --- */
+const fxGrid = {
+  name: "Đi cảnh · Sóng hình học",
+  off: 0, hue: 300,
+  init() { this.off = 0; },
+  draw(ctx, w, h, t, dt) {
+    const horizon = h * 0.55;
+    // sky
+    const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+    const flash = Beat.env * 26;
+    sky.addColorStop(0, "hsl(" + (255 + flash) + ",60%,8%)");
+    sky.addColorStop(1, "hsl(" + (285 + flash) + ",70%,26%)");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, horizon);
+
+    // sun
+    const sr = Math.min(w, h) * (0.16 + Beat.env * 0.03);
+    const sx = w / 2, sy = horizon - sr * 0.25;
+    const sg = ctx.createLinearGradient(0, sy - sr, 0, sy + sr);
+    sg.addColorStop(0, hsl(55 - Beat.env * 20, 100, 68));
+    sg.addColorStop(0.55, hsl(28, 100, 60));
+    sg.addColorStop(1, hsl(330, 90, 58));
+    ctx.save();
+    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, TAU); ctx.clip();
+    ctx.fillStyle = sg;
+    ctx.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
+    // stripes
+    ctx.fillStyle = "rgba(10,4,24,0.9)";
+    for (let i = 0; i < 7; i++) {
+      const yy = sy + sr * 0.15 + i * sr * 0.16;
+      const hh = 2 + i * 1.6 + Beat.env * 3;
+      ctx.fillRect(sx - sr, yy, sr * 2, hh);
+    }
+    ctx.restore();
+
+    // mountains silhouette (parallax)
+    ctx.fillStyle = "rgba(18,8,40,0.95)";
+    ctx.beginPath();
+    ctx.moveTo(0, horizon);
+    for (let x = 0; x <= w; x += 8) {
+      const y = horizon - (Math.sin(x * 0.011 + 2) * 0.5 + Math.sin(x * 0.031) * 0.3 + 0.6) * h * 0.14;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(w, horizon);
+    ctx.closePath(); ctx.fill();
+
+    // ground
+    const gg = ctx.createLinearGradient(0, horizon, 0, h);
+    gg.addColorStop(0, "#12041f");
+    gg.addColorStop(1, "#03000a");
+    ctx.fillStyle = gg;
+    ctx.fillRect(0, horizon, w, h - horizon);
+
+    // scrolling grid
+    this.off += dt * (1.4 + Beat.bass * 3.2 + Beat.env * 2.2);
+    this.hue = 300 + Math.sin(t * 0.2) * 30;
+    ctx.lineWidth = 1.6 + Beat.env * 1.6;
+    ctx.strokeStyle = hsl(this.hue, 95, 62, 0.85);
+    const vpx = w / 2;
+    // verticals
+    for (let i = -14; i <= 14; i++) {
+      const x0 = vpx + i * (w / 8);
+      ctx.beginPath();
+      ctx.moveTo(vpx + i * 6, horizon);
+      ctx.lineTo(x0, h);
+      ctx.stroke();
+    }
+    // horizontals (perspective scroll)
+    for (let i = 0; i < 22; i++) {
+      const p = ((i + this.off) % 22) / 22;      // 0..1
+      const z = p * p;                           // ease-in depth
+      const y = horizon + z * (h - horizon);
+      const a = clamp(p * 1.5, 0, 1) * 0.9;
+      ctx.strokeStyle = hsl(this.hue, 95, 60 + p * 20, a);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+    // horizon glow
+    const hgl = ctx.createLinearGradient(0, horizon - 40, 0, horizon + 40);
+    hgl.addColorStop(0, "rgba(0,0,0,0)");
+    hgl.addColorStop(0.5, hsl(this.hue, 100, 70, 0.5 + Beat.env * 0.4));
+    hgl.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = hgl;
+    ctx.fillRect(0, horizon - 40, w, 80);
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 3. Vũ trụ (starfield warp + nebula) --- */
+const fxSpace = {
+  name: "Đi cảnh · Vũ trụ",
+  stars: [], neb: [], wave: [],
+  init(w, h) {
+    this.stars = [];
+    for (let i = 0; i < 420; i++) {
+      this.stars.push({
+        x: (Math.random() - 0.5) * 2, y: (Math.random() - 0.5) * 2,
+        z: Math.random(), pz: 0
+      });
+    }
+    this.neb = [];
+    for (let i = 0; i < 5; i++) {
+      this.neb.push({ x: Math.random(), y: Math.random(), r: 0.25 + Math.random() * 0.35,
+        hue: [280, 200, 330, 190, 260][i], sp: 0.01 + Math.random() * 0.02 });
+    }
+    this.wave = [];
+  },
+  onBeat() {
+    this.wave.push({ r: 0.02, a: 1 });
+    if (this.wave.length > 5) this.wave.shift();
+  },
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "#01010a";
+    ctx.fillRect(0, 0, w, h);
+    const cx = w / 2, cy = h / 2, diag = Math.hypot(w, h) / 2;
+
+    // nebula clouds
+    ctx.globalCompositeOperation = "lighter";
+    for (const n of this.neb) {
+      const x = (n.x + Math.sin(t * n.sp * 6) * 0.05) * w;
+      const y = (n.y + Math.cos(t * n.sp * 5) * 0.05) * h;
+      const r = n.r * Math.max(w, h) * (1 + Beat.env * 0.12);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, hsl(n.hue + t * 4, 80, 55, 0.16 + Beat.env * 0.1));
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+
+    // stars (warp on beat)
+    const speed = 0.10 + Beat.bass * 0.3 + Beat.env * 0.85;
+    for (const s of this.stars) {
+      s.pz = s.z;
+      s.z -= dt * speed * 0.4;
+      if (s.z <= 0.01) { s.z = 1; s.pz = 1;
+        s.x = (Math.random() - 0.5) * 2; s.y = (Math.random() - 0.5) * 2; }
+      const k = 0.5 / s.z;
+      const x = cx + s.x * k * diag;
+      const y = cy + s.y * k * diag;
+      if (x < -20 || x > w + 20 || y < -20 || y > h + 20) continue;
+      const pk = 0.5 / s.pz;
+      const px = cx + s.x * pk * diag, py = cy + s.y * pk * diag;
+      const bright = clamp((1 - s.z) * 1.3, 0.1, 1);
+      ctx.strokeStyle = "rgba(220,235,255," + (0.35 + bright * 0.6) + ")";
+      ctx.lineWidth = bright * 2.2;
+      const stretch = (1 - s.z < 0.25 && speed > 0.4) ? 1 : 0; // warp lines
+      ctx.beginPath();
+      ctx.moveTo(stretch ? px : x, stretch ? py : y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+
+    // beat shockwaves
+    for (let i = this.wave.length - 1; i >= 0; i--) {
+      const wv = this.wave[i];
+      wv.r += dt * 0.9;
+      wv.a -= dt * 0.7;
+      if (wv.a <= 0) { this.wave.splice(i, 1); continue; }
+      ctx.strokeStyle = hsl(190 + i * 30, 90, 70, wv.a * 0.7);
+      ctx.lineWidth = 3 + wv.a * 4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, wv.r * diag, 0, TAU);
+      ctx.stroke();
+    }
+
+    // core glow
+    const g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, diag * 0.4);
+    g2.addColorStop(0, hsl(220 + Beat.env * 60, 90, 70, 0.12 + Beat.env * 0.25));
+    g2.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "source-over";
+    vignette(ctx, w, h, "rgba(0,0,0,0.65)");
+  }
+};
+
+/* --- 4. Thành phố đêm (skyline scrolling + searchlights) --- */
+const fxCity = {
+  name: "Đi cảnh · Thành phố đêm",
+  layers: [], off: 0, win: [], lights: [],
+  init(w, h) {
+    w = w || 1280; h = h || 720;
+    this.layers = [];
+    for (let L = 0; L < 3; L++) {
+      const b = [];
+      let x = 0;
+      const scale = 1 - L * 0.22;
+      while (x < w * 1.4) {
+        const bw = (40 + Math.random() * 90) * scale;
+        const bh = (0.18 + Math.random() * 0.34) * h * (0.7 + L * 0.25);
+        b.push({ x, w: bw, h: bh, seed: Math.random() * 1000 });
+        x += bw + 6 * scale;
+      }
+      this.layers.push({ b, speed: 8 + L * 14, x: 0, shade: 12 + L * 10 });
+    }
+    this.lights = [];
+    for (let i = 0; i < 3; i++) {
+      this.lights.push({ a: Math.random() * TAU, sp: (i % 2 ? -1 : 1) * (0.25 + i * 0.12) });
+    }
+    this.stars = [];
+    for (let i = 0; i < 90; i++) this.stars.push({ x: Math.random(), y: Math.random() * 0.5, s: Math.random() });
+  },
+  draw(ctx, w, h, t, dt) {
+    // night sky
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, "#050514");
+    sky.addColorStop(0.6, "hsl(" + (258 + Beat.env * 12) + ",55%,14%)");
+    sky.addColorStop(1, "hsl(280,50%,20%)");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+
+    // stars
+    for (const s of this.stars) {
+      const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * (1 + s.s * 3) + s.s * 20));
+      ctx.fillStyle = "rgba(255,255,255," + (0.25 + tw * 0.5) + ")";
+      ctx.fillRect(s.x * w, s.y * h, 1.6, 1.6);
+    }
+
+    // moon
+    const mx = w * 0.78, my = h * 0.2, mr = Math.min(w, h) * 0.07 * (1 + Beat.env * 0.06);
+    const mg = ctx.createRadialGradient(mx, my, mr * 0.4, mx, my, mr * 3);
+    mg.addColorStop(0, "rgba(255,244,214,0.9)");
+    mg.addColorStop(0.25, "rgba(255,240,210,0.25)");
+    mg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = mg; ctx.fillRect(mx - mr * 3, my - mr * 3, mr * 6, mr * 6);
+    ctx.fillStyle = "#fff6da";
+    ctx.beginPath(); ctx.arc(mx, my, mr, 0, TAU); ctx.fill();
+    ctx.fillStyle = "rgba(210,200,170,0.5)";
+    ctx.beginPath(); ctx.arc(mx - mr * 0.3, my - mr * 0.15, mr * 0.22, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + mr * 0.25, my + mr * 0.3, mr * 0.15, 0, TAU); ctx.fill();
+
+    // searchlights
+    ctx.globalCompositeOperation = "lighter";
+    for (const L of this.lights) {
+      L.a += dt * L.sp;
+      const intensity = 0.10 + Beat.env * 0.22;
+      ctx.save();
+      ctx.translate(w / 2, h * 1.02);
+      ctx.rotate(L.a);
+      const lg = ctx.createLinearGradient(0, 0, 0, -h * 1.2);
+      lg.addColorStop(0, "rgba(120,200,255," + intensity + ")");
+      lg.addColorStop(1, "rgba(120,200,255,0)");
+      ctx.fillStyle = lg;
+      ctx.beginPath();
+      ctx.moveTo(-8, 0);
+      ctx.lineTo(-w * 0.06, -h * 1.25);
+      ctx.lineTo(w * 0.06, -h * 1.25);
+      ctx.lineTo(8, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalCompositeOperation = "source-over";
+
+    // skyline layers (scrolling)
+    this.off += dt;
+    for (let li = 0; li < this.layers.length; li++) {
+      const L = this.layers[li];
+      L.x = (L.x + dt * L.speed * (1 + Beat.bass * 1.6)) % (w * 1.4);
+      const base = h * (0.78 + li * 0.07);
+      ctx.fillStyle = "hsl(255,40%," + (L.shade * 0.45) + "%)";
+      const shade = "hsl(255,45%," + Math.round(L.shade * 0.4) + "%)";
+      for (let rep = 0; rep < 2; rep++) {
+        const ox = -L.x + rep * w * 1.4;
+        for (const b of L.b) {
+          const bx = b.x + ox;
+          if (bx > w + 50 || bx + b.w < -50) continue;
+          ctx.fillStyle = shade;
+          ctx.fillRect(bx, base - b.h, b.w, b.h + h);
+          // windows
+          const cols = Math.max(2, Math.floor(b.w / 14));
+          const rows = Math.max(2, Math.floor(b.h / 18));
+          for (let cxi = 0; cxi < cols; cxi++) {
+            for (let ryi = 0; ryi < rows; ryi++) {
+              const hsh = Math.sin(b.seed + cxi * 12.9898 + ryi * 78.233) * 43758.5453;
+              const rnd = hsh - Math.floor(hsh);
+              if (rnd < 0.42) continue;
+              const flick = Math.sin(t * (0.5 + rnd * 3) + rnd * 40) > -0.6 ? 1 : 0.25;
+              const lit = (rnd > 0.88 ? Beat.env : 1) * flick;
+              ctx.fillStyle = rnd > 0.75
+                ? "rgba(140,230,255," + (0.55 * lit + 0.25) + ")"
+                : "rgba(255,214,140," + (0.6 * lit + 0.25) + ")";
+              ctx.fillRect(bx + 4 + cxi * 14, base - b.h + 6 + ryi * 18, 7, 9);
+            }
+          }
+        }
+      }
+    }
+
+    // ground haze
+    const hg = ctx.createLinearGradient(0, h * 0.7, 0, h);
+    hg.addColorStop(0, "rgba(0,0,0,0)");
+    hg.addColorStop(1, "rgba(40,10,70,0.55)");
+    ctx.fillStyle = hg;
+    ctx.fillRect(0, h * 0.7, w, h * 0.3);
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 5. Thanh phổ (spectrum bars) --- */
+const fxBars = {
+  name: "Thanh phổ neon",
+  smooth: [],
+  init() { this.smooth = new Array(48).fill(0); },
+  draw(ctx, w, h, t, dt) {
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, "#0a0620");
+    bg.addColorStop(1, "#02020a");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    const f = AudioSys.freq;
+    const n = this.smooth.length;
+    const bw = w / n;
+    for (let i = 0; i < n; i++) {
+      const idx = Math.floor(Math.pow(i / n, 1.5) * 150) + 2;
+      const v = (f[idx] / 255) * (0.7 + Beat.env * 0.5);
+      this.smooth[i] = lerp(this.smooth[i], v, v > this.smooth[i] ? 0.6 : 0.12);
+      const bh = this.smooth[i] * h * 0.72;
+      const hue = 190 + (i / n) * 160 + t * 30;
+      const g = ctx.createLinearGradient(0, h, 0, h - bh);
+      g.addColorStop(0, hsl(hue, 95, 55, 0.95));
+      g.addColorStop(1, hsl(hue + 60, 95, 75, 0.95));
+      ctx.fillStyle = g;
+      const x = i * bw + 1.5;
+      ctx.fillRect(x, h - bh, bw - 3, bh);
+      // reflection
+      ctx.globalAlpha = 0.25;
+      ctx.fillRect(x, h, bw - 3, -bh * 0.35);
+      ctx.globalAlpha = 1;
+      // cap
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(x, h - bh - 4, bw - 3, 3);
+    }
+    vignette(ctx, w, h, "rgba(0,0,0,0.4)");
+  }
+};
+
+/* --- 6. Vòng tròn (radial spectrum) --- */
+const fxCircle = {
+  name: "Vòng tròn năng lượng",
+  init() {},
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "rgba(4,2,16,0.5)";
+    ctx.fillRect(0, 0, w, h);
+    const cx = w / 2, cy = h / 2;
+    const base = Math.min(w, h) * (0.16 + Beat.bass * 0.06 + Beat.env * 0.03);
+    const f = AudioSys.freq;
+    const n = 96;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(t * 0.25);
+    for (let i = 0; i < n; i++) {
+      const idx = Math.floor(Math.pow(i / n, 1.4) * 150) + 2;
+      const v = f[idx] / 255;
+      const len = base + v * Math.min(w, h) * 0.3 * (1 + Beat.env * 0.5);
+      const ang = (i / n) * TAU;
+      ctx.strokeStyle = hsl(160 + (i / n) * 220 + t * 40, 92, 60, 0.9);
+      ctx.lineWidth = Math.max(2, (TAU * base) / n * 0.7);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(ang) * base, Math.sin(ang) * base);
+      ctx.lineTo(Math.cos(ang) * len, Math.sin(ang) * len);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // core
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, base * 2);
+    g.addColorStop(0, hsl(300 + Beat.env * 80, 80, 70, 0.5 + Beat.env * 0.4));
+    g.addColorStop(0.5, hsl(220, 80, 50, 0.2));
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, base * 2, 0, TAU); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, base, 0, TAU); ctx.stroke();
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 8. Mưa mã (matrix rain) --- */
+const fxMatrix = {
+  name: "Đi cảnh · Mưa mã",
+  cols: [],
+  init(w) {
+    w = w || 1280;
+    const n = Math.ceil(w / 18);
+    this.cols = [];
+    for (let i = 0; i < n; i++) this.cols.push({ y: Math.random() * -30, sp: 0.4 + Math.random(), len: 6 + (Math.random() * 14 | 0) });
+  },
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "rgba(0,8,4,0.35)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.font = "16px monospace";
+    const boost = 1 + Beat.env * 2.2 + Beat.bass * 0.8;
+    const glyphs = "01♪♫#%&$@0110ABCDEF";
+    for (let i = 0; i < this.cols.length; i++) {
+      const c = this.cols[i];
+      const x = i * 18 + 4;
+      c.y += c.sp * boost * 22 * dt;
+      if ((c.y - c.len) * 18 > h) { c.y = -Math.random() * 20; c.sp = 0.4 + Math.random(); }
+      for (let k = 0; k < c.len; k++) {
+        const yy = (c.y - k) * 18;
+        if (yy < -18 || yy > h + 20) continue;
+        const head = k === 0;
+        ctx.fillStyle = head ? "#eaffef" : "rgba(46,255,128," + (0.8 - (k / c.len) * 0.72).toFixed(3) + ")";
+        ctx.fillText(glyphs[(i * 7 + k + ((t * 9) | 0)) % glyphs.length], x, yy);
+      }
+    }
+    vignette(ctx, w, h, "rgba(0,18,8,0.5)");
+  }
+};
+
+/* --- 9. Sóng thời gian (oscilloscope) --- */
+const fxWave = {
+  name: "Sóng thời gian",
+  init() {},
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "rgba(3,4,16,0.5)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(80,255,190,0.12)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < w; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = 0; y < h; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+    const td = AudioSys.time;
+    const n = td.length;
+    ctx.lineWidth = 3 + Beat.env * 4;
+    ctx.strokeStyle = hsl(160 + Beat.env * 130, 95, 66, 0.95);
+    ctx.shadowColor = hsl(180, 100, 62, 1);
+    ctx.shadowBlur = 14 + Beat.env * 22;
+    ctx.beginPath();
+    for (let i = 0; i < n; i += 2) {
+      const x = i / n * w;
+      const y = h / 2 + ((td[i] - 128) / 128) * h * 0.36;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 10. Bong bóng LED --- */
+const fxBubbles = {
+  name: "Bong bóng LED",
+  bs: [],
+  init(w, h) {
+    this.bs = [];
+    for (let i = 0; i < 70; i++) this.bs.push(this.mk(w, h, true));
+  },
+  mk(w, h, anywhere) {
+    w = w || 1280; h = h || 720;
+    return {
+      x: Math.random() * w,
+      y: anywhere ? Math.random() * (h + 200) : h + 40 + Math.random() * 120,
+      r: 8 + Math.random() * 36, sp: 25 + Math.random() * 65,
+      hue: Math.random() * 360, ph: Math.random() * 6.28
+    };
+  },
+  draw(ctx, w, h, t, dt) {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "#0a0624"); g.addColorStop(1, "#02020a");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "lighter";
+    for (const b of this.bs) {
+      b.y -= b.sp * dt * (1 + Beat.bass * 1.5 + Beat.env * 1.3);
+      b.x += Math.sin(t * 1.2 + b.ph) * 20 * dt;
+      if (b.y + b.r < -10) { Object.assign(b, this.mk(w, h, false)); }
+      const col = hsl(b.hue + t * 20, 90, 62, 0.5 + Beat.env * 0.3);
+      ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.stroke();
+      ctx.fillStyle = hsl(b.hue + t * 20, 90, 70, 0.10);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.beginPath(); ctx.arc(b.x - b.r * 0.35, b.y - b.r * 0.35, Math.max(1.5, b.r * 0.16), 0, TAU); ctx.fill();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 11. Kính vạn hoa --- */
+const fxKaleido = {
+  name: "Kính vạn hoa",
+  init() {},
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "#04030e"; ctx.fillRect(0, 0, w, h);
+    const R = Math.min(w, h) * 0.46;
+    const seg = 10;
+    const f = AudioSys.freq;
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    for (let s = 0; s < seg; s++) {
+      ctx.save();
+      ctx.rotate((s / seg) * TAU + t * 0.15);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      for (let i = 0; i < 40; i++) {
+        const v = f[(i * 4) % 150 + 2] / 255;
+        const r = R * (0.15 + (i / 40) * 0.85);
+        const a = (i / 40) * (TAU / seg);
+        ctx.lineTo(Math.cos(a) * r * (0.4 + v * 0.8 + Beat.env * 0.25), Math.sin(a) * r);
+      }
+      ctx.closePath();
+      const hue = 120 + s * 24 + t * 40 + Beat.env * 80;
+      ctx.strokeStyle = hsl(hue, 92, 62, 0.85);
+      ctx.lineWidth = 2 + Beat.env * 2;
+      ctx.stroke();
+      ctx.fillStyle = hsl(hue, 90, 55, 0.08);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 12. Sàn disco --- */
+const fxDisco = {
+  name: "Sàn disco",
+  init() {},
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "#05030f"; ctx.fillRect(0, 0, w, h);
+    const rows = 12, cols = 16;
+    const off = (Math.floor(t * 2) % 2);
+    const cw = w / cols, ch = h / rows;
+    const f = AudioSys.freq;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const v = f[Math.floor((c / cols) * 140) + 2] / 255;
+        const on = ((r + c + off) % 2 === 0);
+        const hue = (on ? 285 : 200) + c * 6 + t * 30 + Beat.env * 60;
+        const light = 8 + v * 45 + Beat.env * 25 + (on ? 6 : 0);
+        ctx.fillStyle = hsl(hue, 80, light, 0.92);
+        ctx.fillRect(c * cw + 1, r * ch + 1, cw - 2, ch - 2);
+      }
+    }
+    vignette(ctx, w, h, "rgba(0,0,0,0.5)");
+  }
+};
+
+/* --- 13. Laser quét --- */
+const fxLaser = {
+  name: "Laser quét",
+  beams: [],
+  init() {
+    this.beams = [];
+    for (let i = 0; i < 8; i++) this.beams.push({ a: Math.random() * TAU, sp: (i % 2 ? 1 : -1) * (0.5 + Math.random()), hue: Math.random() * 360 });
+  },
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "rgba(2,2,10,0.5)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "lighter";
+    const cx = w / 2, cy = h / 2, len = Math.hypot(w, h);
+    for (const b of this.beams) {
+      b.a += b.sp * dt * (1 + Beat.bass * 1.5);
+      ctx.strokeStyle = hsl(b.hue + t * 40, 100, 60, 0.55 + Beat.env * 0.4);
+      ctx.lineWidth = 2 + Beat.env * 4;
+      ctx.shadowColor = hsl(b.hue, 100, 60, 1);
+      ctx.shadowBlur = 18;
+      ctx.beginPath(); ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(b.a) * len, cy + Math.sin(b.a) * len);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    ctx.globalCompositeOperation = "source-over";
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 60 + Beat.env * 90);
+    g.addColorStop(0, "rgba(255,255,255," + (0.6 + Beat.env * 0.4) + ")");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - 220, cy - 220, 440, 440);
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 14. Sao băng --- */
+const fxMeteor = {
+  name: "Sao băng",
+  ms: [], stars: [],
+  init() {
+    this.ms = []; this.stars = [];
+    for (let i = 0; i < 80; i++) this.stars.push({ x: Math.random(), y: Math.random(), s: Math.random() });
+    for (let i = 0; i < 14; i++) this.ms.push(this.mk());
+  },
+  mk() {
+    return { x: Math.random() * 1.4 - 0.25, y: Math.random() * 0.6 - 0.25,
+      sp: 0.5 + Math.random() * 1.2, len: 0.08 + Math.random() * 0.2,
+      hue: 170 + Math.random() * 170 };
+  },
+  draw(ctx, w, h, t, dt) {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "#04041a"); g.addColorStop(1, "#140528");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    for (const s of this.stars) {
+      const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * 2 + s.s * 30));
+      ctx.fillStyle = "rgba(255,255,255," + (0.3 + tw * 0.5).toFixed(3) + ")";
+      ctx.fillRect(s.x * w, s.y * h, 1.5, 1.5);
+    }
+    ctx.globalCompositeOperation = "lighter";
+    const boost = 1 + Beat.env * 2.6 + Beat.bass;
+    for (const m of this.ms) {
+      m.x += m.sp * dt * boost * 0.55;
+      m.y += m.sp * dt * boost * 0.8;
+      if (m.x > 1.3 || m.y > 1.15) Object.assign(m, this.mk());
+      const x1 = m.x * w, y1 = m.y * h;
+      const x2 = x1 - m.len * w, y2 = y1 - m.len * h * 1.4;
+      const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+      grad.addColorStop(0, hsl(m.hue, 95, 76, 0.95));
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 2.5 + Beat.env * 2;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 15. VU meters --- */
+const fxVu = {
+  name: "VU meters",
+  init() {},
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "#0a0a12"; ctx.fillRect(0, 0, w, h);
+    const n = 24, gap = 8;
+    const bw = (w - gap * (n + 1)) / n;
+    const f = AudioSys.freq;
+    const segs = 26;
+    for (let i = 0; i < n; i++) {
+      const v = f[Math.floor(Math.pow(i / n, 1.4) * 150) + 2] / 255;
+      const x = gap + i * (bw + gap);
+      for (let s = 0; s < segs; s++) {
+        const frac = s / segs;
+        if (frac > v) break;
+        const y = h * 0.85 - frac * h * 0.7;
+        ctx.fillStyle = frac > 0.8 ? "#ff3b5c" : frac > 0.6 ? "#ffd23b" : "#2bff88";
+        ctx.globalAlpha = (0.75 + 0.25 * Math.sin(t * 8 + s + i)) * (0.6 + Beat.env * 0.4);
+        ctx.fillRect(x, y, bw, (h * 0.7 / segs) * 0.7);
+      }
+      ctx.globalAlpha = 1;
+      if (v > 0.03) {
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(x, h * 0.85 - v * h * 0.7 - 4, bw, 3);
+      }
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.15)";
+    ctx.fillRect(0, h * 0.85 + 6, w, 2);
+    vignette(ctx, w, h, "rgba(0,0,0,0.45)");
+  }
+};
+
+/* --- 16. Pháo hoa --- */
+const fxFireworks = {
+  name: "Pháo hoa",
+  fw: [], stars: [],
+  init(w, h) {
+    this.fw = []; this.stars = [];
+    for (let i = 0; i < 60; i++) this.stars.push({ x: Math.random(), y: Math.random() * 0.7, s: Math.random() });
+  },
+  spawn(w, h) {
+    const hue = Math.random() * 360;
+    const cx = Math.random() * w, cy = Math.random() * h * 0.5 + h * 0.1;
+    const ps = [];
+    for (let i = 0; i < 46; i++) {
+      const a = (i / 46) * TAU + Math.random() * 0.1;
+      const sp = 60 + Math.random() * 150;
+      ps.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, hue: hue });
+    }
+    this.fw.push({ ps: ps, age: 0 });
+    if (this.fw.length > 6) this.fw.shift();
+  },
+  onBeat() { this.spawn(lastW, lastH); },
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "rgba(2,2,14,0.4)";
+    ctx.fillRect(0, 0, w, h);
+    for (const s of this.stars) {
+      ctx.fillStyle = "rgba(255,255,255," + (0.3 + s.s * 0.5).toFixed(3) + ")";
+      ctx.fillRect(s.x * w, s.y * h, 1.5, 1.5);
+    }
+    ctx.globalCompositeOperation = "lighter";
+    for (let fi = this.fw.length - 1; fi >= 0; fi--) {
+      const fw = this.fw[fi];
+      fw.age += dt;
+      const a = Math.max(0, 1 - fw.age / 1.6);
+      if (a <= 0) { this.fw.splice(fi, 1); continue; }
+      for (const p of fw.ps) {
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vy += 70 * dt; p.vx *= 0.985; p.vy *= 0.985;
+        ctx.fillStyle = hsl(p.hue, 95, 66, a);
+        ctx.fillRect(p.x, p.y, 3, 3);
+      }
+    }
+    ctx.globalCompositeOperation = "source-over";
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 17. Spiral thiên hà --- */
+const fxSpiral = {
+  name: "Spiral thiên hà",
+  init() {},
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "rgba(2,2,12,0.5)";
+    ctx.fillRect(0, 0, w, h);
+    const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.46;
+    ctx.globalCompositeOperation = "lighter";
+    const rot = t * 0.3 + Beat.env * 0.5;
+    for (let a = 0; a < 3; a++) {
+      for (let i = 0; i < 90; i++) {
+        const frac = i / 90;
+        const ang = rot + a * (TAU / 3) + frac * 4.2;
+        const r = R * frac * (1 + Beat.bass * 0.1);
+        const x = cx + Math.cos(ang) * r;
+        const y = cy + Math.sin(ang) * r * 0.85;
+        const sz = 2 + frac * 7 + Beat.env * 3;
+        ctx.fillStyle = hsl(210 + frac * 140 + a * 20 + t * 20, 90, 60, (1 - frac) * 0.8 + 0.15);
+        ctx.beginPath(); ctx.arc(x, y, sz, 0, TAU); ctx.fill();
+      }
+    }
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 0.35);
+    g.addColorStop(0, "rgba(255,250,230," + (0.7 + Beat.env * 0.3).toFixed(3) + ")");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "source-over";
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 18. Nhịp tim ECG --- */
+const fxHeart = {
+  name: "Nhịp tim ECG",
+  pts: [],
+  init() { this.pts = []; for (let i = 0; i < 160; i++) this.pts.push(0); },
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "rgba(4,0,8,0.55)";
+    ctx.fillRect(0, 0, w, h);
+    this.pts.push(Beat.env);
+    if (this.pts.length > 160) this.pts.shift();
+    ctx.strokeStyle = "#ff2d6f";
+    ctx.lineWidth = 3 + Beat.env * 3;
+    ctx.shadowColor = "#ff2d6f";
+    ctx.shadowBlur = 16 + Beat.env * 22;
+    ctx.beginPath();
+    for (let i = 0; i < this.pts.length; i++) {
+      const x = i / (this.pts.length - 1) * w;
+      const spike = this.pts[i];
+      const y = h / 2 - spike * h * 0.42 * (0.6 + 0.4 * Math.sin(i * 0.8)) - Math.sin(i * 0.35 + t * 3) * 6;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = hsl(340, 90, 66, 0.3 + Beat.env * 0.5);
+    ctx.lineWidth = 2;
+    const rr = Math.min(w, h) * (0.22 + Beat.env * 0.15 + 0.02 * Math.sin(t * 4));
+    ctx.beginPath(); ctx.arc(w / 2, h / 2, rr, 0, TAU); ctx.stroke();
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 19. Blob neon --- */
+const fxBlob = {
+  name: "Blob neon",
+  bs: [],
+  init() {
+    this.bs = [];
+    for (let i = 0; i < 7; i++) {
+      this.bs.push({ x: Math.random(), y: Math.random(), r: 0.1 + Math.random() * 0.14,
+        ph: Math.random() * TAU, sp: 0.3 + Math.random() * 0.5, hue: Math.random() * 360 });
+    }
+  },
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "#05040f"; ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "lighter";
+    const R = Math.min(w, h);
+    for (const b of this.bs) {
+      b.ph += dt * b.sp;
+      const x = (b.x + Math.sin(b.ph + t * 0.2) * 0.18) * w;
+      const y = (b.y + Math.cos(b.ph * 1.3 + t * 0.17) * 0.18) * h;
+      const r = b.r * R * (1 + Beat.bass * 0.35 + Beat.env * 0.3);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, hsl(b.hue + t * 30, 90, 60, 0.55));
+      g.addColorStop(0.6, hsl(b.hue + 40 + t * 30, 90, 55, 0.22));
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 20. Chữ neon bay --- */
+const fxText = {
+  name: "Chữ neon bay",
+  init() {},
+  draw(ctx, w, h, t, dt) {
+    ctx.fillStyle = "rgba(6,2,16,0.55)";
+    ctx.fillRect(0, 0, w, h);
+    const words = ["MUSICCLIP", "■ VISUAL LED", "♪ BEAT SYNC", "★ ĐI CẢNH 4K", "PARTY TIME"];
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "bold " + Math.round(Math.min(w, h) * 0.09) + "px system-ui,sans-serif";
+    for (let i = 0; i < words.length; i++) {
+      const y = h * (0.2 + i * 0.15);
+      const speed = 60 + i * 30 + Beat.env * 170;
+      const x = ((t * speed + i * 340) % (w + 700)) - 350;
+      const hue = 180 + i * 45 + t * 40;
+      ctx.shadowColor = hsl(hue, 100, 60, 1);
+      ctx.shadowBlur = 18 + Beat.env * 24;
+      ctx.fillStyle = hsl(hue, 95, 68, 0.95);
+      ctx.fillText(words[i], x, y);
+    }
+    ctx.shadowBlur = 0;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    vignette(ctx, w, h);
+  }
+};
+
+/* --- 7. Hạt sáng (particles) --- */
+const fxPart = {
+  name: "Hạt sáng bay",
+  ps: [],
+  init(w, h) {
+    this.ps = [];
+    for (let i = 0; i < 260; i++) this.ps.push(this.mk(w, h, true));
+  },
+  mk(w, h, anywhere) {
+    return {
+      x: Math.random() * (w || 1280),
+      y: anywhere ? Math.random() * (h || 720) : (h || 720) + 10,
+      vx: (Math.random() - 0.5) * 30,
+      vy: -20 - Math.random() * 55,
+      r: 1.5 + Math.random() * 4,
+      hue: 170 + Math.random() * 170,
+      tw: Math.random() * TAU
+    };
+  },
+  draw(ctx, w, h, t, dt) {
+    const bg = ctx.createRadialGradient(w / 2, h * 0.4, 0, w / 2, h / 2, Math.max(w, h));
+    bg.addColorStop(0, "hsl(" + (265 + Beat.env * 40) + ",55%,14%)");
+    bg.addColorStop(1, "#020208");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "lighter";
+    const boost = 1 + Beat.env * 2.4 + Beat.bass;
+    for (const p of this.ps) {
+      p.x += p.vx * dt * boost;
+      p.y += p.vy * dt * boost;
+      p.tw += dt * 4;
+      if (p.y < -12 || p.x < -12 || p.x > w + 12) Object.assign(p, this.mk(w, h, false));
+      const a = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(p.tw));
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * (3 + Beat.env * 3));
+      g.addColorStop(0, hsl(p.hue + Beat.env * 60, 95, 72, a));
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      const rr = p.r * (3 + Beat.env * 3);
+      ctx.fillRect(p.x - rr, p.y - rr, rr * 2, rr * 2);
+    }
+    ctx.globalCompositeOperation = "source-over";
+    vignette(ctx, w, h, "rgba(0,0,0,0.5)");
+  }
+};
+
+/* ========================== effect manager ========================== */
+const Effects = {
+  list: [fxTunnel, fxGrid, fxSpace, fxCity, fxBars, fxCircle, fxPart,
+         fxMatrix, fxWave, fxBubbles, fxKaleido, fxDisco, fxLaser, fxMeteor,
+         fxVu, fxFireworks, fxSpiral, fxHeart, fxBlob, fxText],
+  idx: 0, prevIdx: -1, transT: 1, transDur: 1.1,
+  auto: false, autoT: 0, cycleSec: 12,
+  offC: null, offCtx: null,
+  cur() { return this.list[this.idx]; },
+  switchTo(i) {
+    const ni = ((i % this.list.length) + this.list.length) % this.list.length;
+    if (ni !== this.idx) { this.prevIdx = this.idx; this.transT = 0; }
+    this.idx = ni;
+    const e = this.cur();
+    if (e.init) e.init(W, H);
+    $("fxName").textContent = e.name;
+    this.autoT = 0;
+    try { localStorage.setItem("mc_fx", String(this.idx)); } catch (err) {}
+  },
+  next(d) { this.switchTo(this.idx + (d || 1)); },
+  onBeat() {
+    const e = this.cur();
+    if (e.onBeat) e.onBeat();
+    if (this.transT < 1 && this.prevIdx >= 0) {
+      const p = this.list[this.prevIdx];
+      if (p.onBeat) p.onBeat();
+    }
+  },
+  update(dt) {
+    if (this.transT < 1) {
+      this.transT = Math.min(1, this.transT + dt / this.transDur);
+      if (this.transT >= 1) this.prevIdx = -1;
+    }
+    if (this.auto) {
+      this.autoT += dt;
+      if (this.autoT >= this.cycleSec) this.next(1);
+    }
+  },
+  _off(w, h) {
+    const pw = Math.max(2, Math.floor(w * dpr)), ph = Math.max(2, Math.floor(h * dpr));
+    if (!this.offC || this.offC.width !== pw || this.offC.height !== ph) {
+      this.offC = document.createElement("canvas");
+      this.offC.width = pw;
+      this.offC.height = ph;
+      this.offCtx = this.offC.getContext("2d");
+    }
+    return this.offC;
+  },
+  /** crossfade render — the old scene dissolves into the new one (no hard cut) */
+  render(c, w, h, t, dt) {
+    const cur = this.list[this.idx];
+    if (this.transT < 1 && this.prevIdx >= 0 && this.prevIdx !== this.idx) {
+      const prev = this.list[this.prevIdx];
+      prev.draw(c, w, h, t, dt);
+      const oc = this._off(w, h);
+      const octx = this.offCtx;
+      octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      cur.draw(octx, w, h, t, dt);
+      c.save();
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.globalAlpha = easeIO(this.transT);
+      c.drawImage(oc, 0, 0, this.offC.width, this.offC.height);
+      c.restore();
+    } else {
+      cur.draw(c, w, h, t, dt);
+    }
+  }
+};
+
+/* ===================== post: bloom + film grain ===================== */
+const Post = {
+  bloomC: null, bloomCtx: null, grain: null, grainPat: null, filterOk: false,
+  init(w, h) {
+    const bc = document.createElement("canvas");
+    bc.width = Math.max(2, w >> 1);
+    bc.height = Math.max(2, h >> 1);
+    this.bloomC = bc;
+    this.bloomCtx = bc.getContext("2d");
+    const g = document.createElement("canvas");
+    g.width = 128; g.height = 128;
+    const gx = g.getContext("2d");
+    const img = gx.createImageData(128, 128);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = (Math.random() * 255) | 0;
+      d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 30;
+    }
+    gx.putImageData(img, 0, 0);
+    this.grain = g;
+    this.grainPat = null;
+    try {
+      const c = document.createElement("canvas").getContext("2d");
+      c.filter = "blur(2px)";
+      this.filterOk = (c.filter === "blur(2px)");
+    } catch (e) { this.filterOk = false; }
+  },
+  apply(c, w, h) {
+    // --- soft bloom: half-res copy → blur → additive glow (YouTube-grade sheen) ---
+    if (this.bloomCtx && this.filterOk) {
+      const b = this.bloomCtx, bw = this.bloomC.width, bh = this.bloomC.height;
+      b.clearRect(0, 0, bw, bh);
+      b.drawImage(c.canvas, 0, 0, bw, bh);
+      c.save();
+      c.globalCompositeOperation = "lighter";
+      c.globalAlpha = 0.40;
+      c.filter = "blur(" + Math.max(4, Math.round(w / 240)) + "px)";
+      c.drawImage(this.bloomC, 0, 0, w, h);
+      c.restore();
+    }
+    // --- subtle animated film grain for texture ---
+    if (this.grain) {
+      if (!this.grainPat) this.grainPat = c.createPattern(this.grain, "repeat");
+      if (this.grainPat) {
+        c.save();
+        c.globalCompositeOperation = "overlay";
+        c.globalAlpha = 0.06;
+        const ox = (Math.random() * 128) | 0;
+        const oy = (Math.random() * 128) | 0;
+        c.translate(-ox, -oy);
+        c.fillStyle = this.grainPat;
+        c.fillRect(0, 0, w + 128, h + 128);
+        c.restore();
+      }
+    }
+  }
+};
+
+/* ============================== UI ============================== */
+const W0 = () => window.innerWidth;
+const H0 = () => window.innerHeight;
+let W = W0(), H = H0(), dpr = 1;
+let lastW = 1280, lastH = 720;   // for effects that spawn on beat
+const cv = $("cv");
+const ctx = cv.getContext("2d", { alpha: false });
+
+const UI = {
+  trackName: $("trackName"),
+  syncPlay() {
+    $("btnPlay").textContent = AudioSys.playing ? "⏸ Tạm dừng" : "▶ Phát";
+    $("beatBadge").textContent = AudioSys.playing ? "♪ Đang phát" : "▶ Đang chờ…";
+  }
+};
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = W0(); H = H0();
+  lastW = W; lastH = H;
+  cv.width = Math.floor(W * dpr);
+  cv.height = Math.floor(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  Post.init(W, H);
+  const e = Effects.cur();
+  if (e.init) e.init(W, H);
+}
+
+/* ============================== loop ============================== */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const t = now / 1000;
+
+  Beat.update(dt, now);
+  Effects.update(dt);
+  try {
+    Effects.render(ctx, W, H, t, dt);
+    Post.apply(ctx, W, H);
+  } catch (err) {
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+    console.error(err);
+  }
+  if (AudioSys.playing) {
+    $("beatBadge").textContent = Beat.env > 0.45 ? "● BEAT!" : "♪ " + (Beat.energy * 100 | 0) + "%";
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ============================== events ============================== */
+function boot() {
+  resize();
+  buildFxPop();
+  let saved = 0;
+  try { saved = parseInt(localStorage.getItem("mc_fx") || "0", 10) || 0; } catch (e) {}
+  Effects.switchTo(saved);
+  UI.syncPlay();
+  requestAnimationFrame(frame);
+}
+
+$("start").addEventListener("click", () => {
+  $("start").style.display = "none";
+  AudioSys.playSample();
+  UI.trackName.textContent = "Nhạc mẫu Vinahouse 128 BPM";
+});
+
+$("btnPlay").addEventListener("click", () => AudioSys.toggle());
+$("btnSample").addEventListener("click", () => {
+  AudioSys.playSample();
+  UI.trackName.textContent = "Nhạc mẫu Vinahouse 128 BPM";
+});
+$("btnFile").addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", (ev) => {
+  const f = ev.target.files && ev.target.files[0];
+  if (!f) return;
+  const url = URL.createObjectURL(f);
+  AudioSys.playFile(url, "🎵 " + f.name);
+});
+$("btnPrev").addEventListener("click", () => Effects.next(-1));
+$("btnNext").addEventListener("click", () => Effects.next(1));
+
+/* effect picker popup */
+function buildFxPop() {
+  const pop = $("fxPop");
+  Effects.list.forEach((e, i) => {
+    const b = document.createElement("button");
+    b.className = "fxi";
+    b.textContent = (i + 1) + ". " + e.name;
+    b.addEventListener("click", () => {
+      Effects.switchTo(i);
+      pop.hidden = true;
+      markFxPop();
+    });
+    pop.appendChild(b);
+  });
+}
+function markFxPop() {
+  const items = $("fxPop").querySelectorAll ? $("fxPop").querySelectorAll(".fxi") : [];
+  for (let i = 0; i < items.length; i++) items[i].classList.toggle("cur", i === Effects.idx);
+}
+$("fxName").addEventListener("click", () => {
+  const pop = $("fxPop");
+  if (pop.hidden) { markFxPop(); pop.hidden = false; }
+  else pop.hidden = true;
+});
+$("fxClose").addEventListener("click", () => { $("fxPop").hidden = true; });
+
+/* download this page for offline use */
+$("btnDl").addEventListener("click", () => {
+  const save = (txt) => {
+    const blob = new Blob([txt], { type: "text/html;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "MusicClip-Visualizer.html";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+  };
+  const fallback = () => save("<!DOCTYPE html>\n" + document.documentElement.outerHTML);
+  try {
+    fetch(location.href)
+      .then((r) => r.text())
+      .then(save)
+      .catch(fallback);
+  } catch (e) { fallback(); }
+});
+$("btnAuto").addEventListener("click", () => {
+  Effects.auto = !Effects.auto;
+  $("btnAuto").classList.toggle("on", Effects.auto);
+  $("btnAuto").textContent = Effects.auto ? "⏱ Đang tự đổi" : "⏱ Tự đổi";
+});
+$("btnFs").addEventListener("click", () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(() => {});
+});
+$("btnHide").addEventListener("click", () => $("hud").classList.toggle("hidden"));
+$("vol").addEventListener("input", (e) => AudioSys.setVolume(e.target.value / 100));
+
+window.addEventListener("resize", resize);
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Space") { e.preventDefault(); AudioSys.toggle(); }
+  else if (e.code === "ArrowRight") Effects.next(1);
+  else if (e.code === "ArrowLeft") Effects.next(-1);
+  else if (e.key === "f" || e.key === "F") $("btnFs").click();
+  else if (e.key === "h" || e.key === "H") $("btnHide").click();
+  else if (e.key === "a" || e.key === "A") $("btnAuto").click();
+});
+
+// tap canvas to unhide / cycle on mobile
+cv.addEventListener("click", () => {
+  const hud = $("hud");
+  if (hud.classList.contains("hidden")) hud.classList.remove("hidden");
+});
+
+boot();
+</script>
+</body>
+</html>
