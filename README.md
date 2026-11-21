@@ -6,6 +6,21 @@ MusicClip Visualizer phát nhạc (bài có sẵn trong app + nhạc trên máy 
 
 ---
 
+## 🌐 Bản web — laptop/PC + điện thoại
+
+**https://zeigarnik-code.github.io/MusicClip/** — mở bằng trình duyệt (Chrome/Edge/Safari…), không cần cài đặt:
+
+- **20 hiệu ứng beat-sync kiểu visual LED đi cảnh**: Tunnel neon · Sóng hình học (synthwave) · Vũ trụ · Thành phố đêm · Thanh phổ · Vòng tròn · Hạt sáng · Mưa mã · Sóng thời gian · Bong bóng LED · Kính vạn hoa · Sàn disco · Laser quét · Sao băng · VU meters · Pháo hoa · Spiral thiên hà · Nhịp tim ECG · Blob neon · Chữ neon bay
+- Bấm **tên hiệu ứng** để mở lưới chọn nhanh (20 ô); nút **⏱ Tự đổi** xoay vòng kiểu nonstop
+- **⬇ Tải offline**: tải `MusicClip-Visualizer.html` về máy — mở bằng trình duyệt bất cứ lúc nào, không cần mạng
+- **Nhạc mẫu Vinahouse 128 BPM** tổng hợp trực tiếp bằng WebAudio, hoặc **chọn file nhạc** (mp3/wav/m4a) từ máy tính / điện thoại
+- Tự đổi hiệu ứng mỗi 12 giây, fullscreen, ẩn UI — hợp trình chiếu màn hình LED/TV
+- Phím tắt: `Space` phát/dừng · `←/→` đổi hiệu ứng · `F` fullscreen · `H` ẩn UI · `A` tự đổi
+- Beat detect bằng spectral flux — cùng thuật toán bản Android
+- Nguồn: [`web/index.html`](web/index.html) (1 file, không build) · deploy qua nhánh `gh-pages`
+
+---
+
 ## ✨ Tính năng
 
 | Tính năng | Mô tả |
