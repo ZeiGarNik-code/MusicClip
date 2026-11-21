@@ -80,7 +80,7 @@
 
 <div id="hud">
   <div id="top">
-    <div id="brand"><b>MusicClip Visualizer</b><span>Visual LED đi cảnh · beat-sync</span></div>
+    <div id="brand"><b>MusicClip Visualizer</b><span>Visual LED đi cảnh · bloom · crossfade mượt</span></div>
     <div id="beatBadge">♪ Đang chờ…</div>
   </div>
   <div id="trackName">Nhạc mẫu Vinahouse 128 BPM</div>
@@ -117,6 +117,9 @@
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
+/* frame-rate independent smoothing: silky at 30/60/120 Hz alike */
+const damp = (a, b, lambda, dt) => a + (b - a) * (1 - Math.exp(-lambda * dt));
+const easeIO = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 const TAU = Math.PI * 2;
 function hsl(h, s, l, a) {
   h = ((h % 360) + 360) % 360;
@@ -335,10 +338,16 @@ const AudioSys = {
 
 /* ============================ beat detect ============================ */
 const Beat = {
-  flux: 0, energy: 0, avg: 0.12, cool: 0, env: 0, lastT: 0,
-  update(now) {
+  flux: 0, energy: 0, avg: 0.12, cool: 0, env: 0, lastT: 0, bass: 0,
+  update(dt, now) {
     const a = AudioSys.analyser;
-    if (!a || !AudioSys.playing) { this.env *= 0.94; this.flux *= 0.9; return; }
+    if (!a || !AudioSys.playing) {
+      this.env *= Math.exp(-dt * 4.5);
+      this.flux *= Math.exp(-dt * 8);
+      this.bass = damp(this.bass, 0, 6, dt);
+      this.energy = damp(this.energy, 0, 6, dt);
+      return;
+    }
     a.getByteFrequencyData(AudioSys.freq);
     a.getByteTimeDomainData(AudioSys.time);
     const f = AudioSys.freq;
@@ -354,21 +363,23 @@ const Beat = {
     }
     for (let i = 2; i < 14; i++) bass += f[i] / 255;
     bass /= 12;
-    this.energy = sum / N;
     this.flux = flux / N;
-    this.bass = bass;
+
+    // silky meters: exponential smoothing, independent of frame rate
+    this.energy = damp(this.energy, sum / N, 7, dt);
+    this.bass = damp(this.bass, bass, 9, dt);
 
     // adaptive threshold
-    this.avg = lerp(this.avg, this.flux, 0.06);
+    this.avg = lerp(this.avg, this.flux, 1 - Math.exp(-dt * 3.6));
     const thresh = this.avg * 1.55 + 0.006;
-    if (this.cool > 0) this.cool -= 16;
+    if (this.cool > 0) this.cool -= dt * 1000;
     if (this.flux > thresh && this.cool <= 0 && now - this.lastT > 260) {
       this.lastT = now;
       this.cool = 240;
       this.env = 1;
       Effects.onBeat();
     } else {
-      this.env *= 0.93;
+      this.env *= Math.exp(-dt * 4.5);   // smooth ~0.7s tail, no fps dependence
     }
   }
 };
@@ -1294,10 +1305,14 @@ const Effects = {
   list: [fxTunnel, fxGrid, fxSpace, fxCity, fxBars, fxCircle, fxPart,
          fxMatrix, fxWave, fxBubbles, fxKaleido, fxDisco, fxLaser, fxMeteor,
          fxVu, fxFireworks, fxSpiral, fxHeart, fxBlob, fxText],
-  idx: 0, auto: false, autoT: 0, cycleSec: 12,
+  idx: 0, prevIdx: -1, transT: 1, transDur: 1.1,
+  auto: false, autoT: 0, cycleSec: 12,
+  offC: null, offCtx: null,
   cur() { return this.list[this.idx]; },
   switchTo(i) {
-    this.idx = ((i % this.list.length) + this.list.length) % this.list.length;
+    const ni = ((i % this.list.length) + this.list.length) % this.list.length;
+    if (ni !== this.idx) { this.prevIdx = this.idx; this.transT = 0; }
+    this.idx = ni;
     const e = this.cur();
     if (e.init) e.init(W, H);
     $("fxName").textContent = e.name;
@@ -1308,11 +1323,106 @@ const Effects = {
   onBeat() {
     const e = this.cur();
     if (e.onBeat) e.onBeat();
+    if (this.transT < 1 && this.prevIdx >= 0) {
+      const p = this.list[this.prevIdx];
+      if (p.onBeat) p.onBeat();
+    }
   },
   update(dt) {
+    if (this.transT < 1) {
+      this.transT = Math.min(1, this.transT + dt / this.transDur);
+      if (this.transT >= 1) this.prevIdx = -1;
+    }
     if (this.auto) {
       this.autoT += dt;
       if (this.autoT >= this.cycleSec) this.next(1);
+    }
+  },
+  _off(w, h) {
+    const pw = Math.max(2, Math.floor(w * dpr)), ph = Math.max(2, Math.floor(h * dpr));
+    if (!this.offC || this.offC.width !== pw || this.offC.height !== ph) {
+      this.offC = document.createElement("canvas");
+      this.offC.width = pw;
+      this.offC.height = ph;
+      this.offCtx = this.offC.getContext("2d");
+    }
+    return this.offC;
+  },
+  /** crossfade render — the old scene dissolves into the new one (no hard cut) */
+  render(c, w, h, t, dt) {
+    const cur = this.list[this.idx];
+    if (this.transT < 1 && this.prevIdx >= 0 && this.prevIdx !== this.idx) {
+      const prev = this.list[this.prevIdx];
+      prev.draw(c, w, h, t, dt);
+      const oc = this._off(w, h);
+      const octx = this.offCtx;
+      octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      cur.draw(octx, w, h, t, dt);
+      c.save();
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.globalAlpha = easeIO(this.transT);
+      c.drawImage(oc, 0, 0, this.offC.width, this.offC.height);
+      c.restore();
+    } else {
+      cur.draw(c, w, h, t, dt);
+    }
+  }
+};
+
+/* ===================== post: bloom + film grain ===================== */
+const Post = {
+  bloomC: null, bloomCtx: null, grain: null, grainPat: null, filterOk: false,
+  init(w, h) {
+    const bc = document.createElement("canvas");
+    bc.width = Math.max(2, w >> 1);
+    bc.height = Math.max(2, h >> 1);
+    this.bloomC = bc;
+    this.bloomCtx = bc.getContext("2d");
+    const g = document.createElement("canvas");
+    g.width = 128; g.height = 128;
+    const gx = g.getContext("2d");
+    const img = gx.createImageData(128, 128);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = (Math.random() * 255) | 0;
+      d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 30;
+    }
+    gx.putImageData(img, 0, 0);
+    this.grain = g;
+    this.grainPat = null;
+    try {
+      const c = document.createElement("canvas").getContext("2d");
+      c.filter = "blur(2px)";
+      this.filterOk = (c.filter === "blur(2px)");
+    } catch (e) { this.filterOk = false; }
+  },
+  apply(c, w, h) {
+    // --- soft bloom: half-res copy → blur → additive glow (YouTube-grade sheen) ---
+    if (this.bloomCtx && this.filterOk) {
+      const b = this.bloomCtx, bw = this.bloomC.width, bh = this.bloomC.height;
+      b.clearRect(0, 0, bw, bh);
+      b.drawImage(c.canvas, 0, 0, bw, bh);
+      c.save();
+      c.globalCompositeOperation = "lighter";
+      c.globalAlpha = 0.40;
+      c.filter = "blur(" + Math.max(4, Math.round(w / 240)) + "px)";
+      c.drawImage(this.bloomC, 0, 0, w, h);
+      c.restore();
+    }
+    // --- subtle animated film grain for texture ---
+    if (this.grain) {
+      if (!this.grainPat) this.grainPat = c.createPattern(this.grain, "repeat");
+      if (this.grainPat) {
+        c.save();
+        c.globalCompositeOperation = "overlay";
+        c.globalAlpha = 0.06;
+        const ox = (Math.random() * 128) | 0;
+        const oy = (Math.random() * 128) | 0;
+        c.translate(-ox, -oy);
+        c.fillStyle = this.grainPat;
+        c.fillRect(0, 0, w + 128, h + 128);
+        c.restore();
+      }
     }
   }
 };
@@ -1340,6 +1450,7 @@ function resize() {
   cv.width = Math.floor(W * dpr);
   cv.height = Math.floor(H * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  Post.init(W, H);
   const e = Effects.cur();
   if (e.init) e.init(W, H);
 }
@@ -1351,10 +1462,11 @@ function frame(now) {
   last = now;
   const t = now / 1000;
 
-  Beat.update(now);
+  Beat.update(dt, now);
   Effects.update(dt);
   try {
-    Effects.cur().draw(ctx, W, H, t, dt);
+    Effects.render(ctx, W, H, t, dt);
+    Post.apply(ctx, W, H);
   } catch (err) {
     ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
     console.error(err);
